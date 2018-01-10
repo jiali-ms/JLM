@@ -60,8 +60,9 @@ def build_corpus_with_limited_vocab(top_n = 50000):
         with open('data/corpus.txt', 'r', encoding='utf-8') as f:
             lines = f.readlines()
             for i, line in enumerate(lines):
-                if i % 10000 == 0:
-                    print(i / len(lines))
+                if i % 1000 == 0:
+                    sys.stdout.write('\rprogress: {}%'.format(round(i/len(lines)*100, 2)))
+                    sys.stdout.flush()
                 new_line = []
                 words = line.strip('\n').split(' ')
                 for word in words:
@@ -102,8 +103,9 @@ def build_encoded_corpus(dir, shuffle=True):
     with open('{}/corpus.txt'.format(dir), 'r', encoding='utf-8') as f:
         lines = f.readlines()
         for i, line in enumerate(lines):
-            if i % 10000 == 0:
-                print(i / len(lines))
+            if i % 1000 == 0:
+                sys.stdout.write('\rprogress: {}%'.format(round(i/len(lines)*100, 2)))
+                sys.stdout.flush()
             words = line.strip('\n').split(' ')
             encoded_words = [w2i[w] for w in words]
             encoded_corpus.append(encoded_words)
@@ -120,5 +122,5 @@ def build_encoded_corpus(dir, shuffle=True):
 
 #build_lexicon('data/corpus.txt')
 #build_corpus_with_limited_vocab(50000)
-#build_corpus_with_limited_vocab(100000)
-build_encoded_corpus('data/corpus_50000')
+build_corpus_with_limited_vocab(100000)
+build_encoded_corpus('data/corpus_100000')
