@@ -30,9 +30,17 @@ def dump_trained_weights(experiment, verbose):
         dump_vars = ['HMi', 'HMf', 'HMo', 'HMo', 'HMg', 'IMi', 'IMf', 'IMo', 'IMg', 'bi', 'bf', 'bo', 'bg', 'LM', 'b2']
 
         if config.share_embedding:
-            dump_vars += ["PM"]
+            dump_vars += ['PM']
         else:
             dump_vars += ['UM']
+
+        if config.V_table:
+            dump_vars.remove('LM')
+            for i, seg in enumerate(config.embedding_seg):
+                if i != 0:
+                    dump_vars += ['VT{}'.format(i)]
+                dump_vars += ['LM{}'.format(i)]
+
 
         weight_dict = tf_weights_to_np_weights_dict(session, dump_vars)
 
@@ -40,12 +48,13 @@ def dump_trained_weights(experiment, verbose):
             # instead save the full patched embedding, split each block in "LM" into list of matrices
             blocks = []
             col_s = 0
-            for size, s, e in config.D_softmax_seg:
+            for size, s, e in config.embedding_seg:
                 if e is None:
                     e = weight_dict['LM'].shape[0]
                 blocks.append(weight_dict['LM'][s:e, col_s:col_s + size])
                 col_s += size
             weight_dict['LM'] = blocks
+
 
         weight_dump_dir = os.path.join(experiment_path, str(experiment), "weights")
         dump_weights(weight_dict, weight_dump_dir, verbose)

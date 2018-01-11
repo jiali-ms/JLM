@@ -54,6 +54,8 @@ class RNNLM_Model():
         self.load_corpus()
         if self.config.D_softmax:
             self.build_D_softmax_mask()
+        if self.config.V_table:
+            self.build_embedding_from_V_tables()
 
         # define model graph
         self.add_placeholders()
@@ -67,6 +69,29 @@ class RNNLM_Model():
         output = tf.reshape(tf.concat(projection_outputs, 1), [-1, len(self.vocab)])
         self.calculate_loss = self.add_loss_op(output)
         self.train_step = self.add_training_op(self.calculate_loss)
+
+    def build_embedding_from_V_tables(self):
+        with tf.variable_scope('embedding'):
+            # variable table is a variation to differentiated softmax. Instead of concat embeddings from different zone,
+            # it uses matrix factorization to decompose each zone |V1| x e into |V1| x e1 and e1 x e.
+            # Implementation wise, we define both matrix at initialization and train them all together.
+            self.blocks = []
+            self.v_tables = []
+            embeddings = []
+            self.config.embed_size = self.config.embedding_seg[0][0]
+            for i, (size, s, e) in enumerate(self.config.embedding_seg):
+                if e is None:
+                    e = len(self.vocab)
+                block = tf.get_variable('LM{}'.format(i), [e-s, size])
+                self.blocks.append(block)
+                if i != 0:
+                    table = tf.get_variable('VT{}'.format(i), [size, self.config.embed_size])
+                    self.v_tables.append(table)
+                    embeddings.append(tf.matmul(block, table))
+                else:
+                    embeddings.append(block)
+
+            self.v_table_embedding = tf.concat(embeddings, axis=0)
 
     def build_D_softmax_mask(self):
         # differentiated softmax will split the vocab in different segmentation
@@ -113,7 +138,9 @@ class RNNLM_Model():
             else:
                 embedding = tf.get_variable('LM', [len(self.vocab), self.config.embed_size])
 
-            if self.config.D_softmax:
+            if self.config.V_table:
+                embedding = self.v_table_embedding
+            elif self.config.D_softmax:
                 # use mask to keep only the blocks in this patched embedding matrix
                 embedding = tf.multiply(embedding, self.D_softmax_mask)
 
@@ -198,7 +225,9 @@ class RNNLM_Model():
                 with tf.variable_scope('embedding', reuse=True):
                     embedding = tf.get_variable('LM')
 
-            if self.config.D_softmax:
+            if self.config.V_table:
+                embedding = self.v_table_embedding
+            elif self.config.D_softmax:
                 embedding = tf.multiply(embedding, self.D_softmax_mask)
 
         with tf.variable_scope('Projection'):
