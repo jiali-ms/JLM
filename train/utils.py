@@ -29,3 +29,17 @@ def corpus_iterator(raw_data, batch_size, num_steps):
         x = data[:, i * num_steps:(i + 1) * num_steps]
         y = data[:, i * num_steps + 1:(i + 1) * num_steps + 1]
         yield (x, y)
+
+import os
+def temp():
+    for folder, subs, files in os.walk('E:/JLM/train/experiments'):
+            for filename in files:
+                if 'cout.txt' in filename:
+                    print(folder)
+                    path = os.path.join(folder, filename)
+                    with open(path, 'r') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            if 'Validation perplexity' in line:
+                                print(line.strip('\n').split(':')[1].strip())
+temp()

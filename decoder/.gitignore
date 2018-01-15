@@ -1,10 +1,8 @@
-data/
-.idea/
-
 # Byte-compiled / optimized / DLL files
 
 *.txt
 *.pkl
+*.json
 
 __pycache__/
 
@@ -187,12 +185,14 @@ ENV/
 .ropeproject
 
 
+# profiling data
+*.lprof
+*.dat
 
-# Tensorflow and experiment logs
-logs/*
-experiments/*
-# sample config
-!logs/tst/config.json
-Tensorlog/
 
-!config_example.txt
+# Test data
+!test_strings.txt
+
+
+# results data
+benchmark
