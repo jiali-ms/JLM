@@ -41,7 +41,6 @@ def dump_trained_weights(experiment, verbose):
                     dump_vars += ['VT{}'.format(i)]
                 dump_vars += ['LM{}'.format(i)]
 
-
         weight_dict = tf_weights_to_np_weights_dict(session, dump_vars)
 
         if config.D_softmax:
@@ -55,14 +54,8 @@ def dump_trained_weights(experiment, verbose):
                 col_s += size
             weight_dict['LM'] = blocks
 
-
         weight_dump_dir = os.path.join(experiment_path, str(experiment), "weights")
         dump_weights(weight_dict, weight_dump_dir, verbose)
-
-        # decoder need the weights as well
-        # release the weights to the decoder folder by manual copy and paste
-
-        # build_embedding_with_word('9')
 
 def tf_weights_to_np_weights_dict(session, names):
     dict = {}
@@ -92,15 +85,19 @@ def dump_weights(weights_dict, dump_dir, verbose):
                 print("dumped {} rows {}".format(name, m.shape))
                 np.savetxt(os.path.join(dump_dir, name + '.txt'), m)
 
-'''
-def build_embedding_with_word(experiment):
-    with open(os.path.join(experiment_path, str(experiment), "weights", "embedding.txt"), 'w') as output:
-        with open(os.path.join(experiment_path, str(experiment), "weights", "LM.txt"), 'r') as f:
+        build_embedding_with_word(dump_dir)
+
+def build_embedding_with_word(dump_dir):
+    with open(os.path.join(dump_dir, "embedding.txt"), 'w') as output:
+        with open(os.path.join(dump_dir, "LM.txt"), 'r') as f:
             lines = f.readlines()
             for i, line in enumerate(lines):
                 #print('{} {}'.format(i, line))
                 output.write('{} {}'.format(i, line))
 
+    print("embedding with word id is dumped")
+
+'''
 def build_compressed_embedding_pkl(experiment ,name):
     embeddings = []
     with open(os.path.join(experiment_path, str(experiment), "weights", name), 'r') as f:
