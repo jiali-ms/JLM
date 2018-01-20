@@ -1,7 +1,7 @@
 # JLM
 A fast LSTM Language Model for large vocabulary language like Japanese and Chinese.  
 
-It focuses on **accelerating inference time** and **reducing model size** to fit requirement of real-time applications especially in client side. With [BCCWJ](http://pj.ninjal.ac.jp/corpus_center/bccwj/en/) Japanese corpus, it is **85% smaller**, and are **50x faster** than standard LSTM solution. See the paper (to come at ANLP 2018) for performance detail.   
+It focuses on **accelerating inference time** and **reducing model size** to fit requirement of real-time applications especially in client side. With [BCCWJ](http://pj.ninjal.ac.jp/corpus_center/bccwj/en/) Japanese corpus, it is **85% smaller**, and are **50x faster** than standard LSTM solution. See the paper (coming soon at ANLP 2018) for performance detail.   
 
 The training part is done with TensorFlow. We then dumped the trained weights out. The inference and decoding are done with numpy for example here. You can play C++ with Eigen as a very easy alternative. 
 
@@ -11,7 +11,7 @@ We implemented the standard LSTM , [tie-embedding](https://arxiv.org/abs/1608.05
 ## decoder
 For Chinese and Japanese input, decoder is used to decode the converted sentence from user keyboard input. It is also useful in many other applications like the LM stage of speech recognition, or the output part of seq2seq model.  
 
-We implemented a standard Viterbi decoder with beam search. A very important to in combining decoder with deep learning LM is batching. Batch all the queries in a path all together saves tons of time. 
+We implemented a standard Viterbi decoder with beam search. A very important trick to combining decoder with deep learning LM is batching. Batch all the queries in a path all together saves tons of time. 
 
 # How to use  
 ## Corpus preparation
@@ -28,7 +28,7 @@ Make sure you put your corpus.txt in the data folder first. The script will gene
 - Config the experiment folder path (put the corpus with vocab you would like to use in the config)
 > data_path = os.path.abspath(os.path.join(root_path, "data/corpus_50000"))
 
-- Enter the train folder, and edit the run file train.py file
+- Enter the train folder, and edit the run file [train.py](https://github.com/jiali-ms/JLM/blob/master/train/train.py) file
 
 ```python
 parameters = {
@@ -56,9 +56,11 @@ parameters = {
  > A small hint here, use up your GPU memory by setting a bigger **num_steps** and **batch_size** to best reduce training time. 
 
 ## Verify LM is correct
-Run the test.py in train folder, it will auto generate a random sentence with the trained model. If the sentence doesn't make sense to your language knowledge at all. One of the stage is not correctly setup. Here is an example of random generated sentence.
+Run the [test.py](https://github.com/jiali-ms/JLM/blob/master/train/test.py) in train folder, it will auto generate a random sentence with the trained model. If the sentence doesn't make sense to your language knowledge at all. One of the stage is not correctly setup. Here is an example of random generated sentence.
 > 自宅 に テレビ 局 で 電話 し たら 、 で も 、 すべて の 通話 が 実現 。
 
 ## Dump  the TF trained weights
-We strongly recommend you use ONNX instead. But for this example, we want **full** control and want to cutoff dependency to TF. Run the weights.py in the train folder to get a pickle of all the trainable parameters in the numpy format. You can use the following command to even dump the txt format for other usage. 
+We strongly recommend you use ONNX instead. But for this example, we want **full** control and want to cutoff dependency to TF. Run the [weights.py](https://github.com/jiali-ms/JLM/blob/master/train/weights.py) in the train folder to get a pickle of all the trainable parameters in the numpy format. You can use the following command to even dump the txt format for other usage. 
 > weiths.py -e 1 -v True
+
+Decoder part to be continued ... 
