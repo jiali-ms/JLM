@@ -5,11 +5,12 @@ import math
 import os
 import time
 import json
+import japanese
 from copy import deepcopy, copy
 import sys
 import operator
 sys.path.append('..')
-from config import dict_path, train_path
+from config import root_path, data_path, train_path, experiment_path, experiment_id
 from model import LSTM_Model
 
 class Node():
@@ -41,21 +42,23 @@ class Path():
                 prob = prob * node.oov_prob  # the prob for unk_pos is shared, need to divide by the word's uni-gram
             self.neg_log_prob += -math.log(prob)
 
+    def __str__(self):
+        return ' '.join(['{}'.format(x.word) for x in self.nodes]) + ': {}'.format(self.neg_log_prob)
+
 class Decoder():
     def __init__(self):
-        self.config = json.loads(open(os.path.join(train_path, str(experiment), "weights", "config.json"), "rt").read())
-        self.i2w = pickle.load(open(os.path.join(dict_path, "i2w.pkl"), 'rb'))
-        self.w2i = pickle.load(open(os.path.join(dict_path, "w2i.pkl"), 'rb'))
-        self.lexicon = pickle.load(open(os.path.join(dict_path, "lexicon.pkl"), 'rb'))
-        self.lexicon = {v: k for k, v in self.lexicon.items()}
+        self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
+        self.i2w = pickle.load(open(os.path.join(data_path, 'i2w.pkl'), 'rb'))
+        self.w2i = pickle.load(open(os.path.join(data_path, 'w2i.pkl'), 'rb'))
+        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))
+        self.reading_dict = pickle.load(open(os.path.join(data_path, 'reading_dict.pkl'), 'rb'))
+        self.lexicon = {k: v for k, v in self.lexicon}
         self.model = LSTM_Model()
-        self.reading_dict = pickle.load(open(os.path.join(dict_path, "reading_dict.pkl"), 'rb'))
 
-    def _parse_reading_id(self, id):
-        # id = int(wid) * 100 + int(lex_type) * 10 + int(nolst)
-        ignore = id % 10 == 1
-        oov = id not in self.i2w.keys()
-        return ignore, oov
+    def _check_oov(self, id):
+        if id > len(self.i2w):
+            return True
+        return False
 
     def _build_lattice(self, input, use_oov=False):
         def add_node_to_lattice(i, sub_token, id, word, prob):
@@ -75,12 +78,12 @@ class Decoder():
                 sub_token = input[i: i + j + 1]
                 if sub_token in self.reading_dict.keys():
                     for id in self.reading_dict[sub_token]:
-                        ignore, oov = self._parse_reading_id(id)
-                        # some words are ignored in best path for performance in existing Japanese IME, align here
-                        if ignore:
+                        oov = self._check_oov(id)
+                        if oov:
                             continue
-                        word = self.lexicon[id]
+                        word = self.i2w[id]
                         prob = 0.0
+                        '''
                         if oov:
                             pos = self.lexicon[id].split('/')[-1]
                             unk_word = '<unk_{}>'.format(hex(int(pos))[2:])
@@ -90,11 +93,12 @@ class Decoder():
                                 continue
                             id = self.w2i[unk_word]
                             # TODO prob = 1 / self.idx2freq[id]  # just share evenly from the distribution.
+                        '''
                         add_node_to_lattice(i, sub_token, id, word, prob)
 
             # if the input like special token cause no match in dictionary, then add the token directly, mark as <unk>
-            if len(backward_lookup[i + 1]) == 0:
-                backward_lookup[i + 1].append(Node(i, 1, self.w2i['<unk>'], input[i]))
+            #if len(backward_lookup[i + 1]) == 0:
+            #    backward_lookup[i + 1].append(Node(i, 1, self.w2i['<unk>'], input[i]))
 
         return backward_lookup
 
@@ -118,13 +122,17 @@ class Decoder():
         pred, state, cell = self.model.predict_with_context([path.nodes[-1].word_idx for path in paths],
                                                             np.concatenate([path.state for path in paths], axis=0),
                                                             np.concatenate([path.cell for path in paths], axis=0))
+
         for i, path in enumerate(paths):
             path.state = np.expand_dims(state[i], axis=0)
             path.cell = np.expand_dims(cell[i], axis=0)
             path.transition_probs = [pred[i]]
 
     def decode(self, input, topN=10, beam_width=10, use_oov=False):
+        input = japanese.to_katakana(input)
+
         backward_lookup = self._build_lattice(input, use_oov)
+
         frame = {}
         for i in range(len(input) + 1):
             b_nodes = backward_lookup[i]
@@ -166,7 +174,7 @@ if __name__ == "__main__":
     '''
 
     start_time = time.time()
-    result = decoder.decode('ていきてきなつういん・かうんせりんぐ', topN=10, beam_width=50, use_oov=True)
+    result = decoder.decode('konofukuwakanojoniau', topN=10, beam_width=50, use_oov=True)
     for item in result:
         print(item)
     print("--- %s seconds ---" % (time.time() - start_time))

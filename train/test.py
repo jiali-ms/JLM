@@ -2,6 +2,7 @@ import os
 from model import RNNLM_Model
 import tensorflow as tf
 from utils import *
+import pickle
 import sys
 sys.path.append('..')
 from config import experiment_path, get_configs

@@ -72,6 +72,12 @@ class LSTM_Model():
             self.hidden = np.zeros(shape=self.hidden.shape)
             self.cell = np.zeros(shape=self.cell.shape)
 
+        self._lstm_cell(index)
+        y = self._project()
+        pred = softmax(y)
+        return pred
+
+    def _lstm_cell(self, index):
         # embedding lookup
         e = self.weights['LM'][index,:]
         i = np.dot(self.hidden, self.weights['HMi']) + np.dot(e, self.weights['IMi']) + self.weights['bi']
@@ -87,6 +93,7 @@ class LSTM_Model():
         # new hidden transformation matrix
         self.hidden = np.multiply(tanh(self.cell), o)
 
+    def _project(self):
         # output word representation
         if self.share_embedding:
             if self.config['D_softmax']:
@@ -111,8 +118,7 @@ class LSTM_Model():
         else:
             y = np.dot(self.hidden, self.weights['UM']) + self.weights['b2']
 
-        pred = softmax(y)
-        return pred
+        return y
 
     def predict_with_context(self, index, hidden, cell):
         self.hidden = hidden
@@ -153,9 +159,9 @@ if __name__ == "__main__":
 
     print('--- generated sentence')
     print(' '.join([x.split('/')[0] for x in result]))
-    #show_prob(result)
+    show_prob(result)
 
     print('--- random sentence by same collection of words, check the difference to see if the model is correct')
-    #shuffle(result)
+    shuffle(result)
     print(' '.join([x.split('/')[0] for x in result]))
-    #show_prob(result)
+    show_prob(result)
