@@ -13,7 +13,6 @@ class Vocab(object):
         print("init vocab...")
         self.w2i = pickle.load(open(os.path.join(data_path, 'w2i.pkl'), 'rb'))
         self.i2w = pickle.load(open(os.path.join(data_path, 'i2w.pkl'), 'rb'))
-        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))
 
     def encode(self, word):
         return self.w2i[word]
@@ -22,7 +21,7 @@ class Vocab(object):
         return self.i2w[index]
 
     def __len__(self):
-        return len(self.lexicon)
+        return len(self.w2i)
 
 class Corpus(object):
     def __init__(self, debug=False):

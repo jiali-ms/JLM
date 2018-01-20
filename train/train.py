@@ -12,8 +12,8 @@ ex.observers.append(FileStorageObserver.create("experiments"))
 # set parameters here so they can be shared between the experiment observer and the model
 parameters = {
     "is_debug": False,
-    "batch_size": 128 * 3,
-    "embed_size": 77,
+    "batch_size": 512,
+    "embed_size": 256,
     "hidden_size": 512,
     "num_steps": 25,
     "max_epochs": 10,
@@ -21,11 +21,11 @@ parameters = {
     "dropout": 0.9,
     "lr": 0.001,
     "share_embedding": True,
-    "gpu_id": 1,
+    "gpu_id": 0,
     "tf_random_seed": 101,
     "D_softmax": False,
-    "V_table": False,
-    "embedding_seg": [(200, 0, 12000), (100, 12000, 30000), (50, 30000, None)],
+    "V_table": True,
+    "embedding_seg": [(200, 0, 6000), (100, 6000, 15000), (50, 15000, None)],
     "tune": False,
     "tune_id": -1,
     "tune_lock_input_embedding": False
