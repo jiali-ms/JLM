@@ -4,10 +4,10 @@ import numpy as np
 import sys
 import operator
 
-'''
-Training corpus that has each line as one sentence. Words are segmented by space. 
-'''
+
 def build_training_corpus(bccwj_suw_dir, debug=False):
+    """Training corpus that has each line as one sentence. Words are segmented by space.
+    """
     corpus_name = 'corpus.txt'
     if debug:
         corpus_name = 'corpus_debug.txt'
@@ -22,17 +22,16 @@ def build_training_corpus(bccwj_suw_dir, debug=False):
                         for line in corpus:
                             f.write('{}\n'.format(' '.join(line)))
 
-'''     
-bccwj corpus disk2 suw folder, contains the segmented corpus.
-The key index of the format are
-9: 'B' means beginning of sentence
-16: POS, e.g. '名詞-普通名詞-一般'
--2: display e.g. '声'
--1: reading in katagana e.g. 'コエ' 
-
-Build a lexicon with key: display/reading/POS value: freq
-'''
 def parse_bccwj_suw(file_path, debug=False):
+    """bccwj corpus disk2 suw folder, contains the segmented corpus.
+    The key index of the format are
+    9: 'B' means beginning of sentence
+    16: POS, e.g. '名詞-普通名詞-一般'
+    -2: display e.g. '声'
+    -1: reading in katagana e.g. 'コエ'
+
+    Build a lexicon with key: display/reading/POS value: freq
+    """
     corpus = []
     sentence = []
     with open(file_path, 'r', encoding='utf-8')as f:

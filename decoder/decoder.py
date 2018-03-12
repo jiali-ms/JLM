@@ -50,15 +50,16 @@ class Decoder():
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
         self.i2w = pickle.load(open(os.path.join(data_path, 'i2w.pkl'), 'rb'))
         self.w2i = pickle.load(open(os.path.join(data_path, 'w2i.pkl'), 'rb'))
-        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))
-        self.reading_dict = pickle.load(open(os.path.join(data_path, 'reading_dict.pkl'), 'rb'))
-        self.lexicon = {k: v for k, v in self.lexicon}
+
+        # full lexicon and reading dictionary covers all the vocab
+        # that includes oov words to the model
+        self.full_lexicon = pickle.load(open(os.path.join(root_path, 'data', 'lexicon.pkl'), 'rb'))
+        self.full_reading_dict = pickle.load(open(os.path.join(root_path, 'data', 'reading_dict.pkl'), 'rb'))
+
         self.model = LSTM_Model()
 
-    def _check_oov(self, id):
-        if id > len(self.i2w):
-            return True
-        return False
+    def _check_oov(self, word):
+        return word not in self.w2i.keys()
 
     def _build_lattice(self, input, use_oov=False):
         def add_node_to_lattice(i, sub_token, id, word, prob):
@@ -76,29 +77,17 @@ class Decoder():
         for i, token in enumerate(input):
             for j in range(len(input) - i):
                 sub_token = input[i: i + j + 1]
-                if sub_token in self.reading_dict.keys():
-                    for id in self.reading_dict[sub_token]:
-                        oov = self._check_oov(id)
+                if sub_token in self.full_reading_dict.keys():
+                    for lexicon_id in self.full_reading_dict[sub_token]:
+                        word = self.full_lexicon[lexicon_id][0]
+                        oov = self._check_oov(word)
                         if oov:
+                            # skip oov in this experiment,
+                            # note that oov affects conversion quality
                             continue
-                        word = self.i2w[id]
                         prob = 0.0
-                        '''
-                        if oov:
-                            pos = self.lexicon[id].split('/')[-1]
-                            unk_word = '<unk_{}>'.format(hex(int(pos))[2:])
-                            word = word + '*'  # mark the oov for debug purpose
-                            if unk_word not in self.w2i:
-                                print(word)
-                                continue
-                            id = self.w2i[unk_word]
-                            # TODO prob = 1 / self.idx2freq[id]  # just share evenly from the distribution.
-                        '''
+                        id = self.w2i[word]
                         add_node_to_lattice(i, sub_token, id, word, prob)
-
-            # if the input like special token cause no match in dictionary, then add the token directly, mark as <unk>
-            #if len(backward_lookup[i + 1]) == 0:
-            #    backward_lookup[i + 1].append(Node(i, 1, self.w2i['<unk>'], input[i]))
 
         return backward_lookup
 
@@ -129,8 +118,6 @@ class Decoder():
             path.transition_probs = [pred[i]]
 
     def decode(self, input, topN=10, beam_width=10, use_oov=False):
-        input = japanese.to_katakana(input)
-
         backward_lookup = self._build_lattice(input, use_oov)
 
         frame = {}
@@ -148,33 +135,10 @@ class Decoder():
         return output[:topN]
 
 if __name__ == "__main__":
-    print("test decoder")
-    test_reading_dict = {
-        "き": ["き", "期", "気", "祈"],
-        "ょ": ["ょ"],
-        "きょ": ["きょ", "居", "巨", "許"],
-        "きょう": ["きょう", "今日", "京"],
-        "きょうの": ["きょうの", "京の"],
-        "う": ["う", "右"],
-        "は": ["は", "葉", "歯", "派"],
-        "い": ["い", "伊", "医", "イ"],
-        "いい": ["いい", "言い"],
-        "て": ["て", "手"],
-        "ん": ["ん"],
-        "てん": ["てん", "点", "天"],
-        "てんき": ["てんき", "天気", "転機", "テンキ"]
-    }
-
     decoder = Decoder()
-    '''
-    b = decoder._build_lattice('きょうはいい')
-    for key, value in b.items():
-        for node in value[:5]:
-            print("{}: {}".format(key, node.word))
-    '''
-
     start_time = time.time()
-    result = decoder.decode('konofukuwakanojoniau', topN=10, beam_width=50, use_oov=True)
+    print(input)
+    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, use_oov=True)
     for item in result:
         print(item)
     print("--- %s seconds ---" % (time.time() - start_time))
