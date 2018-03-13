@@ -75,4 +75,4 @@ The [decoder.py](https://github.com/jiali-ms/JLM/blob/master/decoder/decoder.py)
 `(27.574523992770953, ['鏡/キョー/接尾辞-名詞的-一般', 'は/ワ/助詞-係助詞', 'いい/イー/形容詞-非自立可能', '天気/テンキ/名詞-普通名詞-一般', 'です/デス/助動詞'])`
 
 ## Want to try more examples of the model?
-go to http://nplfun.com/ime
+go to http://nlpfun.com/ime
