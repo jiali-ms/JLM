@@ -1,7 +1,7 @@
 # JLM
 A fast LSTM Language Model for large vocabulary language like Japanese and Chinese.
 
-It focuses on **accelerating inference time** and **reducing model size** to fit requirement of real-time applications especially in client side. With [BCCWJ](http://pj.ninjal.ac.jp/corpus_center/bccwj/en/) Japanese corpus, it is **85% smaller**, and are **50x faster** than standard LSTM solution with softmax. See the paper (coming soon at ANLP 2018) for performance detail.
+It focuses on **accelerating inference time** and **reducing model size** to fit requirement of real-time applications especially in client side. With [BCCWJ](http://pj.ninjal.ac.jp/corpus_center/bccwj/en/) Japanese corpus, it is **85% smaller**, and are **50x faster** than standard LSTM solution with softmax. See the paper [JLM - Fast RNN Language Model with Large Vocabulary](http://anlp.jp/proceedings/annual_meeting/2018/pdf_dir/D3-4.pdf) for performance detail.
 
 The training part is done with TensorFlow. We then dumped the trained weights out. The inference and decoding are done with numpy for example here. You can play C++ with Eigen as a very easy alternative.
 
