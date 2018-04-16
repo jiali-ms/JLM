@@ -125,6 +125,8 @@ class RNNLM_Model():
         self.input_placeholder = tf.placeholder(tf.int32, shape=(None, self.config.num_steps))
         self.labels_placeholder = tf.placeholder(tf.int32, shape=(None, self.config.num_steps))
         self.dropout_placeholder = tf.placeholder(tf.float32, None)
+        self.initial_state = tf.placeholder(tf.float32, shape=(None, self.config.hidden_size))
+        self.initial_cell = tf.placeholder(tf.float32, shape=(None, self.config.hidden_size))
 
     def add_embedding(self):
         with tf.variable_scope('embedding'):
@@ -204,6 +206,9 @@ class RNNLM_Model():
 
                 rnn_outputs.append(state)
 
+                if tstep == len(inputs) - 1:
+                    self.final_cell = cell
+
             self.final_state = rnn_outputs[-1]
 
         with tf.variable_scope('RNNDropout'):
@@ -269,8 +274,10 @@ class RNNLM_Model():
             dp = 1
         total_steps = sum(1 for x in corpus_iterator(data, config.batch_size, config.num_steps))
         total_loss = []
-        state = self.initial_state.eval()
-        cell = self.initial_cell.eval()
+
+        state = np.zeros((self.config.batch_size, self.config.hidden_size))
+        cell = np.zeros((self.config.batch_size, self.config.hidden_size))
+
         for step, (x, y) in enumerate(
                 corpus_iterator(data, config.batch_size, config.num_steps)):
             # We need to pass in the initial state and retrieve the final state to give
@@ -281,8 +288,8 @@ class RNNLM_Model():
                     self.initial_cell: cell,
                     self.dropout_placeholder: dp}
 
-            loss, state, _ = session.run(
-                [self.calculate_loss, self.final_state, train_op], feed_dict=feed)
+            loss, state, cell, _ = session.run(
+                [self.calculate_loss, self.final_state, self.final_cell, train_op], feed_dict=feed)
 
             # check each loss to make sure repro
             if step < 10:
