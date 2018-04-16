@@ -50,13 +50,14 @@ def train_RNNLM(_run):
         print("Running in debug mode...")
 
     with tf.Graph().as_default():
+        # set random seed before the graph is built
+        tf.set_random_seed(config.tf_random_seed)
+
         model = RNNLM_Model(config)
         model.load_corpus(debug=config.is_debug)
 
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
-
-        tf.set_random_seed(config.tf_random_seed)
 
         tf_config = tf.ConfigProto()
         tf_config.gpu_options.allow_growth = True
