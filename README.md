@@ -6,7 +6,7 @@ A fast LSTM Language Model for large vocabulary language like Japanese and Chine
 It focuses on **accelerating inference time** and **reducing model size** to fit requirement of real-time applications especially in client side. It is **85% smaller**, and are **50x faster** than standard LSTM solution with softmax. See the paper [JLM - Fast RNN Language Model with Large Vocabulary](http://anlp.jp/proceedings/annual_meeting/2018/pdf_dir/D3-4.pdf) for performance detail.
 
 ### No dependency to training framework
-The training part is done with TensorFlow. Instead depending on a big dynamic library of TF to run in client app, we dumped the trained weights out. The inference and decoding can be done by python with numpy or C++ with Eigen. There is no black box.
+The training part is done with TensorFlow. Instead of depending on a big dynamic library of TF to run in client app, we dumped the trained weights out. The inference and decoding can be done by python with numpy or C++ with Eigen. There is no black box.
 
 ## Language model
 We implemented the standard LSTM , [tie-embedding](https://arxiv.org/abs/1608.05859), [D-softmax](https://arxiv.org/abs/1512.04906), and [D-softmax*](https://arxiv.org/abs/1609.04309) in both training and numpy inference stages as a comparison. In practice, please consider just use D-softmax* for your best interest.
