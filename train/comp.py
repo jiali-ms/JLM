@@ -35,7 +35,7 @@ def kmeans_compress(weight, bit=8):
 
     assert bit <= 32
     clusters = 2 ** bit
-    print('{} of clusters'.format(clusters))
+    print('{} clusters'.format(clusters))
     kmeans = KMeans(n_clusters=clusters, n_jobs=4)
     kmeans.fit(weight)
     code = kmeans.predict(weight)
