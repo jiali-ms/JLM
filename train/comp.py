@@ -35,6 +35,7 @@ def kmeans_compress(weight, bit=8):
 
     assert bit <= 32
     clusters = 2 ** bit
+    print('{} of clusters'.format(clusters))
     kmeans = KMeans(n_clusters=clusters, n_jobs=4)
     kmeans.fit(weight)
     code = kmeans.predict(weight)
@@ -59,7 +60,7 @@ def compressed_trained_weights(experiment, debug=True):
     for key, value in weights.items():
         print('compressing {} {} '.format(key, value.shape))
         start = time.time()
-        code, codebook = kmeans_compress(value)
+        code, codebook = kmeans_compress(value, bit)
 
         end = time.time()
         comp_dump[key] = (code, codebook)
