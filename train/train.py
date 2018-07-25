@@ -14,18 +14,18 @@ parameters = {
     "debug": False,
     "vocab_size": 50000,
     "gpu_id": 0,
-    "batch_size": 128,
+    "batch_size": 128 * 3,
     "embed_size": 256,
     "hidden_size": 512,
     "num_steps": 20,
-    "max_epochs": 10,
+    "max_epochs": 2,
     "early_stopping": 1,
     "dropout": 0.9,
     "lr": 0.001,
     "tf_random_seed": 101,
     "share_embedding": True,
     "D_softmax": False,
-    "V_table": False,
+    "V_table": True,
     "embedding_seg": [(200, 0, 6000), (100, 6000, 15000), (50, 15000, None)],
 }
 
@@ -83,3 +83,6 @@ def train_RNNLM(_run):
                 if epoch - best_val_epoch > config.early_stopping:
                     break
                 print('Total time: {}'.format(time.time() - start))
+
+            test_pp = model.run_epoch(session, model.encoded_test)
+            print('Test perplexity: {}'.format(test_pp))

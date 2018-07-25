@@ -80,7 +80,7 @@ class RNNLM_Model():
     def load_corpus(self):
         self.corpus = Corpus(self.vocab, self.config.debug)
         self.encoded_train = np.array(self.corpus.encoded_train)
-        self.encoded_valid = np.array(self.corpus.encoded_dev)
+        self.encoded_dev = np.array(self.corpus.encoded_dev)
         self.encoded_test = np.array(self.corpus.encoded_test)
 
     def load_dict(self):
