@@ -3,51 +3,16 @@ import sys
 import numpy as np
 import pickle
 import tensorflow as tf
+from data import Vocab, Corpus
 from tensorflow.contrib.legacy_seq2seq import sequence_loss
 from utils import *
 sys.path.append('..')
 from config import get_configs, experiment_path, data_path
 
-class Vocab(object):
-    def __init__(self):
-        print("init vocab...")
-        self.w2i = pickle.load(open(os.path.join(data_path, 'w2i.pkl'), 'rb'))
-        self.i2w = pickle.load(open(os.path.join(data_path, 'i2w.pkl'), 'rb'))
-
-    def encode(self, word):
-        return self.w2i[word]
-
-    def decode(self, index):
-        return self.i2w[index]
-
-    def __len__(self):
-        return len(self.w2i)
-
-class Corpus(object):
-    def __init__(self, debug=False):
-        print("load corpus...")
-        self.encoded_corpus = pickle.load(open(os.path.join(data_path, 'encoded_corpus.pkl'), 'rb'))
-        print("corpus loaded {} words".format(len(self.encoded_corpus)))
-
-        self.size = len(self.encoded_corpus)
-        if debug:
-            self.size = 1024 * 1024
-
-    def encoded_train(self):
-        return self.encoded_corpus[:round(self.size * 0.7)]
-
-    def encoded_valid(self):
-        return self.encoded_corpus[round(self.size * 0.7): round(self.size * 0.9)]
-
-    def encoded_test(self):
-        return self.encoded_corpus[round(self.size * 0.9): self.size]
-
-
 # the RNNLM code borrowed sample code from http://cs224d.stanford.edu/assignment2/index.html
 class RNNLM_Model():
     def __init__(self, config):
         # init
-        print('init training model...')
         self.config = config
         self.load_dict()
         self.load_corpus()
@@ -112,14 +77,14 @@ class RNNLM_Model():
             col_s += size
         self.D_softmax_mask = tf.constant(D_softmax_mask, dtype=tf.float32)
 
-    def load_corpus(self, debug=False):
-        self.corpus = Corpus(debug)
-        self.encoded_train = np.array(self.corpus.encoded_train())
-        self.encoded_valid = np.array(self.corpus.encoded_valid())
-        self.encoded_test = np.array(self.corpus.encoded_test())
+    def load_corpus(self):
+        self.corpus = Corpus(self.vocab, self.config.debug)
+        self.encoded_train = np.array(self.corpus.encoded_train)
+        self.encoded_valid = np.array(self.corpus.encoded_dev)
+        self.encoded_test = np.array(self.corpus.encoded_test)
 
     def load_dict(self):
-        self.vocab = Vocab()
+        self.vocab = Vocab(self.config.vocab_size)
 
     def add_placeholders(self):
         self.input_placeholder = tf.placeholder(tf.int32, shape=(None, self.config.num_steps))
@@ -130,14 +95,7 @@ class RNNLM_Model():
 
     def add_embedding(self):
         with tf.variable_scope('embedding'):
-            if self.config.tune:
-                if self.config.tune_lock_input_embedding:
-                    embedding = tf.get_variable('LM', initializer=tf.constant(self.LM.astype(np.float32)),
-                                                trainable=False)
-                else:
-                    embedding = tf.get_variable('LM', initializer=tf.constant(self.weights['LM'].astype(np.float32)))
-            else:
-                embedding = tf.get_variable('LM', [len(self.vocab), self.config.embed_size])
+            embedding = tf.get_variable('LM', [len(self.vocab), self.config.embed_size])
 
             if self.config.V_table:
                 embedding = self.v_table_embedding
@@ -165,36 +123,20 @@ class RNNLM_Model():
                 if tstep > 0:
                     scope.reuse_variables()
                 # input, forget, output, gate
-                if self.config.tune:  # init from pre-trained results
-                    Hi = tf.get_variable('HMi', initializer=tf.constant(self.weights['HMi'].astype(np.float32)))
-                    Hf = tf.get_variable('HMf', initializer=tf.constant(self.weights['HMf'].astype(np.float32)))
-                    Ho = tf.get_variable('HMo', initializer=tf.constant(self.weights['HMo'].astype(np.float32)))
-                    Hg = tf.get_variable('HMg', initializer=tf.constant(self.weights['HMg'].astype(np.float32)))
+                Hi = tf.get_variable('HMi', [self.config.hidden_size, self.config.hidden_size])
+                Hf = tf.get_variable('HMf', [self.config.hidden_size, self.config.hidden_size])
+                Ho = tf.get_variable('HMo', [self.config.hidden_size, self.config.hidden_size])
+                Hg = tf.get_variable('HMg', [self.config.hidden_size, self.config.hidden_size])
 
-                    Ii = tf.get_variable('IMi', initializer=tf.constant(self.weights['IMi'].astype(np.float32)))
-                    If = tf.get_variable('IMf', initializer=tf.constant(self.weights['IMf'].astype(np.float32)))
-                    Io = tf.get_variable('IMo', initializer=tf.constant(self.weights['IMo'].astype(np.float32)))
-                    Ig = tf.get_variable('IMg', initializer=tf.constant(self.weights['IMg'].astype(np.float32)))
+                Ii = tf.get_variable('IMi', [self.config.embed_size, self.config.hidden_size])
+                If = tf.get_variable('IMf', [self.config.embed_size, self.config.hidden_size])
+                Io = tf.get_variable('IMo', [self.config.embed_size, self.config.hidden_size])
+                Ig = tf.get_variable('IMg', [self.config.embed_size, self.config.hidden_size])
 
-                    bi = tf.get_variable('bi', initializer=tf.constant(self.weights['bi'].astype(np.float32)))
-                    bf = tf.get_variable('bf', initializer=tf.constant(self.weights['bf'].astype(np.float32)))
-                    bo = tf.get_variable('bo', initializer=tf.constant(self.weights['bo'].astype(np.float32)))
-                    bg = tf.get_variable('bg', initializer=tf.constant(self.weights['bg'].astype(np.float32)))
-                else:
-                    Hi = tf.get_variable('HMi', [self.config.hidden_size, self.config.hidden_size])
-                    Hf = tf.get_variable('HMf', [self.config.hidden_size, self.config.hidden_size])
-                    Ho = tf.get_variable('HMo', [self.config.hidden_size, self.config.hidden_size])
-                    Hg = tf.get_variable('HMg', [self.config.hidden_size, self.config.hidden_size])
-
-                    Ii = tf.get_variable('IMi', [self.config.embed_size, self.config.hidden_size])
-                    If = tf.get_variable('IMf', [self.config.embed_size, self.config.hidden_size])
-                    Io = tf.get_variable('IMo', [self.config.embed_size, self.config.hidden_size])
-                    Ig = tf.get_variable('IMg', [self.config.embed_size, self.config.hidden_size])
-
-                    bi = tf.get_variable('bi', [self.config.hidden_size])
-                    bf = tf.get_variable('bf', [self.config.hidden_size])
-                    bo = tf.get_variable('bo', [self.config.hidden_size])
-                    bg = tf.get_variable('bg', [self.config.hidden_size])
+                bi = tf.get_variable('bi', [self.config.hidden_size])
+                bf = tf.get_variable('bf', [self.config.hidden_size])
+                bo = tf.get_variable('bo', [self.config.hidden_size])
+                bg = tf.get_variable('bg', [self.config.hidden_size])
 
                 i = tf.nn.sigmoid(tf.matmul(state, Hi) + tf.matmul(current_input, Ii) + bi)
                 f = tf.nn.sigmoid(tf.matmul(state, Hf) + tf.matmul(current_input, If) + bf)
@@ -221,34 +163,23 @@ class RNNLM_Model():
         # note that it is not part of standard LSTM model,
         # it requires a special projection between hidden and output embedding layer
 
-        if self.config.tune:
-            print('embedding is pre-trained or compressed. Now locked it to tune rest of the model')
-            embedding = tf.get_variable('CLM', initializer=tf.constant(self.LM.astype(np.float32)), trainable=False)
-        else:
-            if self.config.share_embedding:
-                with tf.variable_scope('embedding', reuse=True):
-                    embedding = tf.get_variable('LM')
+        if self.config.share_embedding:
+            with tf.variable_scope('embedding', reuse=True):
+                embedding = tf.get_variable('LM')
 
-            if self.config.V_table:
-                embedding = self.v_table_embedding
-            elif self.config.D_softmax:
-                embedding = tf.multiply(embedding, self.D_softmax_mask)
+        if self.config.V_table:
+            embedding = self.v_table_embedding
+        elif self.config.D_softmax:
+            embedding = tf.multiply(embedding, self.D_softmax_mask)
 
         with tf.variable_scope('Projection'):
             if self.config.share_embedding:
-                if self.config.tune:
-                    P = tf.get_variable('PM', initializer = tf.constant(self.weights['PM'].astype(np.float32)))
-                    U = tf.matmul(P, tf.transpose(embedding))
-                else:
-                    P = tf.get_variable('PM', [self.config.hidden_size, self.config.embed_size])
-                    U = tf.matmul(P, tf.transpose(embedding))
+                P = tf.get_variable('PM', [self.config.hidden_size, self.config.embed_size])
+                U = tf.matmul(P, tf.transpose(embedding))
             else:
                 U = tf.get_variable('UM', [self.config.hidden_size, len(self.vocab)])
 
-            if self.config.tune:
-                proj_b = tf.get_variable('b2', initializer = tf.constant(self.weights['b2'].astype(np.float32)))
-            else:
-                proj_b = tf.get_variable('b2', [len(self.vocab)])
+            proj_b = tf.get_variable('b2', [len(self.vocab)])
             outputs = [tf.matmul(o, U) + proj_b for o in rnn_outputs]
 
         return outputs
@@ -290,10 +221,6 @@ class RNNLM_Model():
 
             loss, state, cell, _ = session.run(
                 [self.calculate_loss, self.final_state, self.final_cell, train_op], feed_dict=feed)
-
-            # check each loss to make sure repro
-            if step < 10:
-                print(loss)
 
             total_loss.append(loss)
             if verbose and step % verbose == 0:

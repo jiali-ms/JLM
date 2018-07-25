@@ -11,8 +11,10 @@ ex.observers.append(FileStorageObserver.create("experiments"))
 
 # set parameters here so they can be shared between the experiment observer and the model
 parameters = {
-    "is_debug": False,
-    "batch_size": 128 * 3,
+    "debug": False,
+    "vocab_size": 50000,
+    "gpu_id": 0,
+    "batch_size": 128,
     "embed_size": 256,
     "hidden_size": 512,
     "num_steps": 20,
@@ -20,15 +22,11 @@ parameters = {
     "early_stopping": 1,
     "dropout": 0.9,
     "lr": 0.001,
-    "share_embedding": True,
-    "gpu_id": 0,
     "tf_random_seed": 101,
+    "share_embedding": True,
     "D_softmax": False,
     "V_table": False,
     "embedding_seg": [(200, 0, 6000), (100, 6000, 15000), (50, 15000, None)],
-    "tune": False,
-    "tune_id": -1,
-    "tune_lock_input_embedding": False
 }
 
 ex.add_config(parameters)
@@ -46,7 +44,7 @@ def train_RNNLM(_run):
     if not os.path.exists(experiment_dump_path):
         os.makedirs(experiment_dump_path)
 
-    if config.is_debug:
+    if config.debug:
         print("Running in debug mode...")
 
     with tf.Graph().as_default():
@@ -54,7 +52,6 @@ def train_RNNLM(_run):
         tf.set_random_seed(config.tf_random_seed)
 
         model = RNNLM_Model(config)
-        model.load_corpus(debug=config.is_debug)
 
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
@@ -75,9 +72,9 @@ def train_RNNLM(_run):
                 train_pp = model.run_epoch(
                     session, model.encoded_train,
                     train_op=model.train_step)
-                valid_pp = model.run_epoch(session, model.encoded_valid)
                 print('Training perplexity: {}'.format(train_pp))
                 print('Total Training time: {}'.format(time.time() - start))
+                valid_pp = model.run_epoch(session, model.encoded_dev)
                 print('Validation perplexity: {}'.format(valid_pp))
                 if valid_pp < best_val_pp:
                     best_val_pp = valid_pp
