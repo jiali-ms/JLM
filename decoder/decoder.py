@@ -12,6 +12,7 @@ import operator
 sys.path.append('..')
 from config import root_path, data_path, train_path, experiment_path, experiment_id
 from model import LSTM_Model
+from train.data import Vocab
 
 class Node():
     def __init__(self, s, l, idx, word, oov_prob=0.0):
@@ -48,8 +49,9 @@ class Path():
 class Decoder():
     def __init__(self):
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
-        self.i2w = pickle.load(open(os.path.join(data_path, 'i2w.pkl'), 'rb'))
-        self.w2i = pickle.load(open(os.path.join(data_path, 'w2i.pkl'), 'rb'))
+        vocab = Vocab(self.config['vocab_size'])
+        self.i2w = vocab.i2w
+        self.w2i = vocab.w2i
 
         # full lexicon and reading dictionary covers all the vocab
         # that includes oov words to the model
@@ -59,7 +61,7 @@ class Decoder():
         self.model = LSTM_Model()
 
     def _check_oov(self, word):
-        return word not in self.w2i.keys()
+        return word not in self.w2i
 
     def _build_lattice(self, input, use_oov=False):
         def add_node_to_lattice(i, sub_token, id, word, prob):
@@ -88,6 +90,10 @@ class Decoder():
                         prob = 0.0
                         id = self.w2i[word]
                         add_node_to_lattice(i, sub_token, id, word, prob)
+
+                # put symbol directly if no match at all in reading dictionary
+                if len(backward_lookup[i + 1]) == 0:
+                    backward_lookup[i + 1].append(Node(i, 1, self.w2i['<unk>'], input[i]))
 
         return backward_lookup
 
@@ -138,7 +144,7 @@ if __name__ == "__main__":
     decoder = Decoder()
     start_time = time.time()
     print(input)
-    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, use_oov=True)
+    result = decoder.decode('ニニュー', topN=10, beam_width=10, use_oov=True)
     for item in result:
         print(item)
     print("--- %s seconds ---" % (time.time() - start_time))

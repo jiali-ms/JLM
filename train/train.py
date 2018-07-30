@@ -13,19 +13,19 @@ ex.observers.append(FileStorageObserver.create("experiments"))
 parameters = {
     "debug": False,
     "vocab_size": 50000,
-    "gpu_id": 0,
+    "gpu_id": 2,
     "batch_size": 128 * 3,
-    "embed_size": 256,
-    "hidden_size": 512,
+    "embed_size": 64,
+    "hidden_size": 128,
     "num_steps": 20,
-    "max_epochs": 2,
+    "max_epochs": 10,
     "early_stopping": 1,
     "dropout": 0.9,
     "lr": 0.001,
     "tf_random_seed": 101,
     "share_embedding": True,
     "D_softmax": False,
-    "V_table": True,
+    "V_table": False,
     "embedding_seg": [(200, 0, 6000), (100, 6000, 15000), (50, 15000, None)],
 }
 
@@ -51,7 +51,7 @@ def train_RNNLM(_run):
         # set random seed before the graph is built
         tf.set_random_seed(config.tf_random_seed)
 
-        model = RNNLM_Model(config)
+        model = RNNLM_Model(config, load_corpus=True)
 
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()

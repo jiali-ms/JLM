@@ -13,7 +13,7 @@ def generate_text(session, model, config, starting_text='<eos>',
     state = model.initial_state.eval()
     cell = model.initial_cell.eval()
     # Imagine tokens as a batch size of one, length of len(tokens[0])
-    tokens = [model.vocab.encode(word) for word in starting_text.split()]
+    tokens = [model.vocab.w2i[word] for word in starting_text.split()]
     for i in range(stop_length):
         feed = {model.input_placeholder: [tokens[-1:]],
                 model.initial_state: state,
@@ -24,9 +24,9 @@ def generate_text(session, model, config, starting_text='<eos>',
 
         next_word_idx = sample(y_pred[0], temperature=temp)
         tokens.append(next_word_idx)
-        if stop_tokens and model.vocab.decode(tokens[-1]) in stop_tokens:
+        if stop_tokens and model.vocab.i2w[tokens[-1]] in stop_tokens:
             break
-    output = [model.vocab.decode(word_idx) for word_idx in tokens]
+    output = [model.vocab.i2w[word_idx] for word_idx in tokens]
     return output
 
 def generate_sentence(session, model, config, *args, **kwargs):
@@ -46,9 +46,9 @@ def auto_generate_sentence(experiment=1):
         saver.restore(session, os.path.join(experiment_path, str(experiment), "tf_dump", 'rnnlm.weights'))
         starting_text = '<eos>'
         while starting_text:
-            print(' '.join(generate_sentence(
-                session, gen_model, gen_config, starting_text=starting_text, temp=1.0)))
+            sen = generate_sentence(session, gen_model, gen_config, starting_text=starting_text, temp=1.0)
+            print(' '.join([w.split('/')[0] for w in sen]))
             starting_text = input('> ')
 
 if __name__ == "__main__":
-    auto_generate_sentence(experiment=2)
+    auto_generate_sentence(experiment=4)

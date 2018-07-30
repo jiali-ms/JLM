@@ -11,11 +11,12 @@ from config import get_configs, experiment_path, data_path
 
 # the RNNLM code borrowed sample code from http://cs224d.stanford.edu/assignment2/index.html
 class RNNLM_Model():
-    def __init__(self, config):
+    def __init__(self, config, load_corpus=False):
         # init
         self.config = config
         self.load_dict()
-        self.load_corpus()
+        if load_corpus:
+            self.load_corpus()
         if self.config.D_softmax:
             self.build_D_softmax_mask()
         if self.config.V_table:
