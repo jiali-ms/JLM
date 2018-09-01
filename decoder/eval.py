@@ -5,14 +5,20 @@ import json
 from random import shuffle
 import sys
 from decoder import Decoder
+from decoder_ngram import NGramDecoder
 sys.path.append('..')
 from config import data_path, experiment_id, experiment_path
 from tqdm import tqdm
 from train.data import Vocab
+import time
 
 class Evaluator:
-    def __init__(self):
-        self.decoder = Decoder()
+    def __init__(self, use_ngram=False):
+        if use_ngram:
+            self.decoder = NGramDecoder()
+        else:
+            self.decoder = Decoder()
+
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
         vocab = Vocab(self.config['vocab_size'])
         self.w2i = vocab.w2i
@@ -27,8 +33,16 @@ class Evaluator:
         best_hit = 0
         n_best_hit = 0
 
-        with open('eval_log_e{}.txt'.format(experiment_id), 'w', encoding='utf-8') as f:
+        if isinstance(self.decoder, NGramDecoder):
+            decoder_type =  "ngram"
+        else:
+            decoder_type = "neural"
+
+        with open('eval_log_e{}_{}.txt'.format(experiment_id, decoder_type), 'w', encoding='utf-8') as f:
             x_, y_ = self.load_eval_set()
+
+            start_time = time.time()
+
             for x, y in tqdm(zip(x_[:samples], y_[:samples]), total=samples):
                 results = self.decoder.decode(x)
                 # convert to list of strings
@@ -47,7 +61,10 @@ class Evaluator:
                     f.write('{}\n'.format(item))
 
             f.write('best_hit {} nbest_hit{} no_hit {} samples {}'.format(best_hit, n_best_hit, samples-best_hit-n_best_hit, samples))
+            f.write("--- %s seconds ---" % (time.time() - start_time))
+
             print('best_hit {} nbest_hit{} no_hit {} samples {}'.format(best_hit, n_best_hit, samples-best_hit-n_best_hit, samples))
+            print("--- %s seconds ---" % (time.time() - start_time))
 
     def load_eval_set(self, debug=True):
         """
@@ -80,5 +97,5 @@ class Evaluator:
             return x, y
 
 if __name__ == '__main__':
-    eval = Evaluator()
-    eval.evaluate()
+    eval = Evaluator(use_ngram=False)
+    eval.evaluate(samples=2000)
