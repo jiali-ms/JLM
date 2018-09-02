@@ -12,10 +12,17 @@ from tqdm import tqdm
 from train.data import Vocab
 import time
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--use_ngram", "-ng", type=bool, default=False, help="Use ngram decoder or not")
+parser.add_argument("--ngram_order", "-o", type=int, default=3, help="Ngram order")
+parser.add_argument("--samples", "-s", type=int, default=2000, help="Number of sentences to evaluate")
+args = parser.parse_args()
+
 class Evaluator:
-    def __init__(self, use_ngram=False):
-        if use_ngram:
-            self.decoder = NGramDecoder()
+    def __init__(self):
+        if args.use_ngram:
+            self.decoder = NGramDecoder(ngram_order=args.ngram_order)
         else:
             self.decoder = Decoder()
 
@@ -23,7 +30,7 @@ class Evaluator:
         vocab = Vocab(self.config['vocab_size'])
         self.w2i = vocab.w2i
 
-    def evaluate(self, samples=200):
+    def evaluate(self, samples=args.samples):
         """
         Run decoding with decoder with a fixed number of pairs from evaluation set.
 
@@ -34,7 +41,7 @@ class Evaluator:
         n_best_hit = 0
 
         if isinstance(self.decoder, NGramDecoder):
-            decoder_type =  "ngram"
+            decoder_type = "ngram_{}".format(args.ngram_order)
         else:
             decoder_type = "neural"
 
@@ -97,5 +104,5 @@ class Evaluator:
             return x, y
 
 if __name__ == '__main__':
-    eval = Evaluator(use_ngram=False)
-    eval.evaluate(samples=2000)
+    eval = Evaluator()
+    eval.evaluate()

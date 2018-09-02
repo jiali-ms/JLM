@@ -14,7 +14,8 @@ class NGramModel():
         Arpa parsing code are mainly from
         https://raw.githubusercontent.com/yohokuno/neural_ime/master/decode_ngram.py
     """
-    def __init__(self, ngram_file='lm3'):
+    def __init__(self, ngram_file='lm3', ngram_order=3):
+        self.ngram_order = ngram_order
         self.model = self.parse_srilm(os.path.join(data_path, ngram_file))
 
     def parse_ngram(self, ngram):
@@ -27,6 +28,7 @@ class NGramModel():
                 yield word
 
     def parse_srilm(self, file):
+        print('{} loaded'.format(file))
         ngrams = {}
         with open(file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -52,7 +54,7 @@ class NGramModel():
 
     def predict(self, words, debug=False):
         if type(words) is list:
-            words = tuple(words)
+            words = tuple(words[-self.ngram_order:])
         if words in self.model:
             cost, _ = self.model[words]
             if debug:
@@ -75,5 +77,5 @@ class NGramModel():
 
 if __name__ == "__main__":
     # test the model
-    model = NGramModel('lm3')
+    model = NGramModel(ngram_file='lm3', ngram_order=2)
     print(model.evaluate(['今日/キョー/名詞-普通名詞-副詞可能', 'は/ワ/助詞-係助詞', 'いい/イー/形容詞-非自立可能', '天気/テンキ/名詞-普通名詞-一般', 'です/デス/助動詞'], debug=True))
