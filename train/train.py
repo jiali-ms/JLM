@@ -15,8 +15,8 @@ parameters = {
     "vocab_size": 50000,
     "gpu_id": 0,
     "batch_size": 128 * 3,
-    "embed_size": 64,
-    "hidden_size": 128,
+    "embed_size": 512,
+    "hidden_size": 256,
     "num_steps": 20,
     "max_epochs": 10,
     "early_stopping": 1,
@@ -26,7 +26,7 @@ parameters = {
     "share_embedding": True,
     "D_softmax": False,
     "V_table": False,
-    "embedding_seg": [(200, 0, 6000), (100, 6000, 15000), (50, 15000, None)],
+    "embedding_seg": [(256, 0, 4000), (128, 4000, 12000), (64, 12000, None)],
     "char_rnn": True,
 }
 

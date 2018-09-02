@@ -46,6 +46,7 @@ class Evaluator:
             decoder_type = "neural"
 
         with open('eval_log_e{}_{}.txt'.format(experiment_id, decoder_type), 'w', encoding='utf-8') as f:
+
             x_, y_ = self.load_eval_set()
 
             start_time = time.time()

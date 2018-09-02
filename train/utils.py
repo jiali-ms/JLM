@@ -32,14 +32,33 @@ def corpus_iterator(raw_data, batch_size, num_steps):
 
 import os
 def temp():
-    for folder, subs, files in os.walk('E:/JLM/train/experiments'):
+    for folder, subs, files in os.walk('D:/jiayao/JLM/train/experiments'):
             for filename in files:
-                if 'cout.txt' in filename:
+                if 'config.json' in filename:
                     print(folder)
                     path = os.path.join(folder, filename)
                     with open(path, 'r') as f:
                         lines = f.readlines()
                         for line in lines:
+                            if 'embed_size' in line:
+                                print(line.strip())
+                            if 'hidden_size' in line:
+                                print(line.strip())
+                            if 'D_softmax' in line and 'true' in line:
+                                print(line.strip())
+                            if 'V_table' in line and 'true' in line:
+                                print(line.strip())
+                            if 'gpu' in line:
+                                print(line.strip())
+
+                if 'cout.txt' in filename:
+                    path = os.path.join(folder, filename)
+                    with open(path, 'r') as f:
+                        lines = f.readlines()
+                        for line in lines:
                             if 'Validation perplexity' in line:
+                                print(line.strip('\n').split(':')[1].strip())
+                            if 'Test perplexity' in line:
+                                print('test pp')
                                 print(line.strip('\n').split(':')[1].strip())
 temp()
