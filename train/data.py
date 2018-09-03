@@ -14,11 +14,11 @@ from config import experiment_path, experiment_id
 
 class Vocab(object):
     def __init__(self, size):
-        lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size]
+        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size]
         # put unk to top.
         # otherwise, if freq if provided, sort with freq
-        self.lexicon = [('<unk>', 0)] + lexicon
-        self.w2i = {x[0]:i for i, x in enumerate(lexicon)}
+        self.lexicon = [('<unk>', 0)] + self.lexicon
+        self.w2i = {x[0]:i for i, x in enumerate(self.lexicon)}
         self.i2w = {v:k for k,v in self.w2i.items()}
         print('vocab with size {} loaded'.format(size))
 
@@ -91,8 +91,8 @@ def build_compressed_embedding_pkl(name):
 if __name__ == "__main__":
     # test the model
     # build_compressed_embedding_pkl('embedding.txt.comp')
-    #vocab = Vocab(50000)
-    vocab = CharVocab(50000)
+    vocab = Vocab(50000)
+    #vocab = CharVocab(50000)
     corpus = Corpus(vocab, debug=True)
-    #print([vocab.i2w[x] for x in corpus.encoded_train][:100])
-    print([vocab.i2c[x] for x in corpus.encoded_train][:1000])
+    print([vocab.i2w[x] for x in corpus.encoded_train][:100])
+    #print([vocab.i2c[x] for x in corpus.encoded_train][:1000])
