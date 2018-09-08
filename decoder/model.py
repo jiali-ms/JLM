@@ -6,6 +6,7 @@ from random import shuffle
 import sys
 sys.path.append('..')
 from config import data_path, experiment_path, experiment_id
+from train.data import Vocab
 
 def sigmoid(x):
     return 1 / (np.exp(-x) + 1)
@@ -32,9 +33,9 @@ def sample(a, temperature=1.0):
 
 class LSTM_Model():
     """The numpy implementation of the NN Language Model"""
-    def __init__(self):
+    def __init__(self, comp=8):
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), "config.json"), "rt").read())
-        self.weights = pickle.load(open(os.path.join(experiment_path, str(experiment_id), 'weights', 'lstm_weights.pkl'), 'rb'))
+        self.weights = self._load_model(comp)
         self.embed_size = self.config['embed_size']
         self.hidden_size = self.config['hidden_size']
         self.share_embedding = self.config['share_embedding']
@@ -66,6 +67,15 @@ class LSTM_Model():
                     embeddings.append(block)
 
             self.weights['LM'] = np.concatenate(embeddings, axis=0)
+
+    def _load_model(self, comp=0):
+        if comp:
+            file = 'lstm_weights_comp_{}.pkl'.format(comp)
+            print('use compressed model, comp_{}'.format(comp))
+        else:
+            file = 'lstm_weights.pkl'
+
+        return pickle.load(open(os.path.join(experiment_path, str(experiment_id), 'weights', file), 'rb'))
 
     def predict(self, index, reset=False):
         if reset: # hidden and cell should be set before using this function
@@ -140,8 +150,10 @@ def show_prob(inputs):
 
 if __name__ == "__main__":
     # test the model
-    i2w = pickle.load(open(os.path.join(data_path, "i2w.pkl"), 'rb'))
-    w2i = pickle.load(open(os.path.join(data_path, "w2i.pkl"), 'rb'))
+    config = json.loads(open(os.path.join(experiment_path, str(experiment_id), "config.json"), "rt").read())
+    vocab = Vocab(config['vocab_size'])
+    i2w = vocab.i2w
+    w2i = vocab.w2i
     model = LSTM_Model()
     starting_text = '<eos>'
     result = []

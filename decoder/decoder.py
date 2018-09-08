@@ -47,7 +47,7 @@ class Path():
         return ' '.join(['{}'.format(x.word) for x in self.nodes]) + ': {}'.format(self.neg_log_prob)
 
 class Decoder():
-    def __init__(self):
+    def __init__(self, comp=0):
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
         vocab = Vocab(self.config['vocab_size'])
         self.i2w = vocab.i2w
@@ -58,7 +58,7 @@ class Decoder():
         self.full_lexicon = pickle.load(open(os.path.join(root_path, 'data', 'lexicon.pkl'), 'rb'))
         self.full_reading_dict = pickle.load(open(os.path.join(root_path, 'data', 'reading_dict.pkl'), 'rb'))
 
-        self.model = LSTM_Model()
+        self.model = LSTM_Model(comp)
 
     def _check_oov(self, word):
         return word not in self.w2i

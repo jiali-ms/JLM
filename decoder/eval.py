@@ -17,6 +17,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--use_ngram", "-ng", type=bool, default=False, help="Use ngram decoder or not")
 parser.add_argument("--ngram_order", "-o", type=int, default=3, help="Ngram order")
 parser.add_argument("--samples", "-s", type=int, default=2000, help="Number of sentences to evaluate")
+parser.add_argument("--comp", "-c", type=int, default=0, help="Compression bit, 0 means no compression")
+
 args = parser.parse_args()
 
 class Evaluator:
@@ -24,7 +26,7 @@ class Evaluator:
         if args.use_ngram:
             self.decoder = NGramDecoder(ngram_order=args.ngram_order)
         else:
-            self.decoder = Decoder()
+            self.decoder = Decoder(args.comp)
 
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
         vocab = Vocab(self.config['vocab_size'])
@@ -45,7 +47,7 @@ class Evaluator:
         else:
             decoder_type = "neural"
 
-        with open('eval_log_e{}_{}.txt'.format(experiment_id, decoder_type), 'w', encoding='utf-8') as f:
+        with open('eval_log_e{}_{}_comp_{}.txt'.format(experiment_id, decoder_type, args.comp), 'w', encoding='utf-8') as f:
 
             x_, y_ = self.load_eval_set()
 
