@@ -4,35 +4,44 @@ import os
 import json
 from random import shuffle
 import sys
-from decoder import Decoder
+from decoder import Decoder, CharRNNDecoder
 from decoder_ngram import NGramDecoder
 sys.path.append('..')
-from config import data_path, experiment_id, experiment_path
+from config import data_path, experiment_path
 from tqdm import tqdm
 from train.data import Vocab
 import time
 
 import argparse
 parser = argparse.ArgumentParser()
+parser.add_argument("--experiment_id", "-e", type=int, default=16, help="experiment id to eval")
 parser.add_argument("--use_ngram", "-ng", type=bool, default=False, help="Use ngram decoder or not")
 parser.add_argument("--ngram_order", "-o", type=int, default=3, help="Ngram order")
-parser.add_argument("--samples", "-s", type=int, default=2000, help="Number of sentences to evaluate")
+parser.add_argument("--eval_size", "-es", type=int, default=100, help="Number of sentences to evaluate")
 parser.add_argument("--comp", "-c", type=int, default=0, help="Compression bit, 0 means no compression")
+parser.add_argument("--vocab_select", "-vs", type=bool, default=False, help="Use vocab select method or not")
+parser.add_argument("--top_sampling", "-ts", type=bool, default=False, help="Sampling strategy for vocab select")
+parser.add_argument("--random_sampling", "-rs", type=bool, default=False, help="Sampling strategy for vocab select")
+parser.add_argument("--samples", "-s", type=int, default=0, help="Samples when using advanced sampling")
+parser.add_argument("--beam_size", "-b", type=int, default=10, help="Beam size for decoder")
 
 args = parser.parse_args()
 
 class Evaluator:
     def __init__(self):
-        if args.use_ngram:
-            self.decoder = NGramDecoder(ngram_order=args.ngram_order)
-        else:
-            self.decoder = Decoder(args.comp)
-
-        self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
-        vocab = Vocab(self.config['vocab_size'])
+        self.config = json.loads(open(os.path.join(experiment_path, str(args.experiment_id), 'config.json'), 'rt').read())
+        vocab = Vocab(self.config['vocab_size'], self.config['char_rnn'])
         self.w2i = vocab.w2i
 
-    def evaluate(self, samples=args.samples):
+        if args.use_ngram:
+            self.decoder = NGramDecoder(ngram_order=args.ngram_order)
+        elif self.config['char_rnn']:
+            self.decoder = CharRNNDecoder(experiment_id=args.experiment_id, comp=args.comp)
+        else:
+            self.decoder = Decoder(experiment_id=args.experiment_id, comp=args.comp)
+
+
+    def evaluate(self):
         """
         Run decoding with decoder with a fixed number of pairs from evaluation set.
 
@@ -47,14 +56,25 @@ class Evaluator:
         else:
             decoder_type = "neural"
 
-        with open('eval_log_e{}_{}_comp_{}.txt'.format(experiment_id, decoder_type, args.comp), 'w', encoding='utf-8') as f:
+        with open('eval_log_{}_e_{}_size_{}_b_{}_comp_{}_vocab_sel_{}_samples_{}_top_{}_random_{}.txt'.format(
+                decoder_type,
+                args.experiment_id,
+                args.eval_size,
+                args.beam_size,
+                args.comp,
+                args.vocab_select,
+                args.samples,
+                args.top_sampling,
+                args.random_sampling
+        ), 'w', encoding='utf-8') as f:
 
             x_, y_ = self.load_eval_set()
 
             start_time = time.time()
 
-            for x, y in tqdm(zip(x_[:samples], y_[:samples]), total=samples):
-                results = self.decoder.decode(x)
+            for x, y in tqdm(zip(x_, y_), total=args.eval_size):
+                results = self.decoder.decode(x, beam_width=args.beam_size, vocab_select=args.vocab_select, samples=args.samples,
+                                              top_sampling=args.top_sampling, random_sampling=args.random_sampling)
                 # convert to list of strings
                 sentences = [''.join([x.split('/')[0] for x in item[1]]) for item in results]
                 if y == sentences[0]:
@@ -70,11 +90,20 @@ class Evaluator:
                 for item in sentences:
                     f.write('{}\n'.format(item))
 
-            f.write('best_hit {} nbest_hit{} no_hit {} samples {}'.format(best_hit, n_best_hit, samples-best_hit-n_best_hit, samples))
+            f.write('best_hit {} nbest_hit{} no_hit {} eval_size {}'.format(best_hit, n_best_hit,
+                                                                            args.eval_size-best_hit-n_best_hit,
+                                                                            args.eval_size))
+            f.write("--- %s seconds per prediction ---" % (np.mean(self.decoder.perf_log)))
+            f.write("--- %s seconds per decoding---" % (np.sum(self.decoder.perf_log) / self.decoder.perf_sen))
             f.write("--- %s seconds ---" % (time.time() - start_time))
 
-            print('best_hit {} nbest_hit{} no_hit {} samples {}'.format(best_hit, n_best_hit, samples-best_hit-n_best_hit, samples))
+            print('best_hit {} nbest_hit{} no_hit {} eval_size {}'.format(best_hit, n_best_hit,
+                                                                          args.eval_size-best_hit-n_best_hit,
+                                                                          args.eval_size))
+            print("--- %s seconds per prediction ---" % (np.mean(self.decoder.perf_log)))
+            print("--- %s seconds per decoding---" % (np.sum(self.decoder.perf_log) / self.decoder.perf_sen))
             print("--- %s seconds ---" % (time.time() - start_time))
+
 
     def load_eval_set(self, debug=True):
         """
@@ -84,7 +113,7 @@ class Evaluator:
         """
         def has_oov(tokens):
             for token in tokens:
-                if token not in self.w2i:
+                if self.decoder._check_oov(token):
                     return True
             return False
 
@@ -94,7 +123,7 @@ class Evaluator:
 
         with open(os.path.join(data_path, 'test.txt'), 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            print('{} lines'.format(len(lines)))
+            print('take {} for evaluation from all {} lines'.format(args.eval_size, len(lines)))
             for line in lines:
                 tokens = line.strip().split(' ')
                 if not has_oov(tokens):
@@ -102,6 +131,9 @@ class Evaluator:
                     target = ''.join([x.split('/')[0] for x in tokens])
                     x.append(readings)
                     y.append(target)
+
+                    if len(x) >= args.eval_size:
+                        break
 
             print('{} pairs load'.format(len(x)))
             return x, y

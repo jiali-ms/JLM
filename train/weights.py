@@ -27,7 +27,7 @@ def dump_trained_weights(experiment, verbose):
         session.run(init)
         saver.restore(session, os.path.join(experiment_path, str(experiment), "tf_dump" ,'rnnlm.weights'))
 
-        dump_vars = ['HMi', 'HMf', 'HMo', 'HMo', 'HMg', 'IMi', 'IMf', 'IMo', 'IMg', 'bi', 'bf', 'bo', 'bg', 'LM', 'b2']
+        dump_vars = ['HMi', 'HMf', 'HMo', 'HMo', 'HMg', 'IMi', 'IMf', 'IMo', 'IMg', 'LM', 'bi', 'bf', 'bo', 'bg', 'b2']
 
         if config.share_embedding:
             dump_vars += ['PM']
@@ -84,6 +84,7 @@ def dump_weights(weights_dict, dump_dir, verbose):
             else:
                 print("dumped {} rows {}".format(name, m.shape))
                 np.savetxt(os.path.join(dump_dir, name + '.txt'), m)
+                np.save(os.path.join(dump_dir, name + '.npy'), m)
 
         build_embedding_with_word(dump_dir)
 
@@ -116,5 +117,4 @@ def build_compressed_embedding_pkl(experiment ,name):
 '''
 
 if __name__ == "__main__":
-    if args.experiment is not None:
-        dump_trained_weights(args.experiment, args.verbose)
+    dump_trained_weights(args.experiment, args.verbose)

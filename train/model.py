@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pickle
 import tensorflow as tf
-from data import Vocab, CharVocab, Corpus
+from data import Vocab, Corpus
 from tensorflow.contrib.legacy_seq2seq import sequence_loss
 from utils import *
 sys.path.append('..')
@@ -85,10 +85,7 @@ class RNNLM_Model():
         self.encoded_test = np.array(self.corpus.encoded_test)
 
     def load_dict(self):
-        if self.config.char_rnn:
-            self.vocab = CharVocab(self.config.vocab_size)
-        else:
-            self.vocab = Vocab(self.config.vocab_size)
+        self.vocab = Vocab(self.config.vocab_size, self.config.char_rnn)
 
     def add_placeholders(self):
         self.input_placeholder = tf.placeholder(tf.int32, shape=(None, self.config.num_steps))

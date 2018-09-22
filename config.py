@@ -17,7 +17,6 @@ print("root path of project: {}".format(root_path))
 train_path = os.path.abspath(os.path.join(root_path, "train"))
 data_path = os.path.abspath(os.path.join(root_path, "data"))
 experiment_path = os.path.abspath(os.path.join(train_path, "experiments"))
-experiment_id = 8  # Use the dump of which experiment in decoder
 
 class ExperimentConfig:
     def __init__(self, **entries):

@@ -47,6 +47,9 @@ class NGramDecoder():
         self.full_reading_dict = pickle.load(open(os.path.join(root_path, 'data', 'reading_dict.pkl'), 'rb'))
 
         self.model = NGramModel(ngram_file='lm3', ngram_order=ngram_order)
+        
+        self.perf_sen = 0
+        self.perf_log = []
 
     def _check_oov(self, word):
         return word not in self.w2i.keys()
@@ -95,11 +98,13 @@ class NGramDecoder():
                 cur_paths.nodes = copy(prev_path.nodes)
                 cur_paths.nodes.append(node)
                 words = [node.word for node in cur_paths.nodes]
+                start_time = time.time()
                 prob = self.model.predict(words)
+                self.perf_log.append(time.time() - start_time)
                 cur_paths.neg_log_prob += prob
                 frame[idx].append(cur_paths)
 
-    def decode(self, input, topN=10, beam_width=10, use_oov=False):
+    def decode(self, input, topN=10, beam_width=10, use_oov=False, vocab_select=False, samples=0, top_sampling=False, random_sampling=False):
         backward_lookup = self._build_lattice(input, use_oov)
 
         frame = {}
@@ -114,6 +119,9 @@ class NGramDecoder():
             # self._batch_predict(frame[i])
 
         output = [(x.neg_log_prob, [n.word for n in x.nodes if n.word != "<eos>"]) for x in frame[len(input)]]
+        
+        self.perf_sen += 1
+        
         return output[:topN]
 
 if __name__ == "__main__":

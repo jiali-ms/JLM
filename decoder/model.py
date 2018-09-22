@@ -5,7 +5,7 @@ import json
 from random import shuffle
 import sys
 sys.path.append('..')
-from config import data_path, experiment_path, experiment_id
+from config import data_path, experiment_path
 from train.data import Vocab
 
 def sigmoid(x):
@@ -33,9 +33,10 @@ def sample(a, temperature=1.0):
 
 class LSTM_Model():
     """The numpy implementation of the NN Language Model"""
-    def __init__(self, comp=8):
+    def __init__(self, experiment_id=0, comp=0):
+        print('LSTM model: exp {} comp {}'.format(experiment_id, comp))
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), "config.json"), "rt").read())
-        self.weights = self._load_model(comp)
+        self.weights = self._load_model(experiment_id, comp)
         self.embed_size = self.config['embed_size']
         self.hidden_size = self.config['hidden_size']
         self.share_embedding = self.config['share_embedding']
@@ -68,24 +69,55 @@ class LSTM_Model():
 
             self.weights['LM'] = np.concatenate(embeddings, axis=0)
 
-    def _load_model(self, comp=0):
+    def _load_model(self, experiment_id=0, comp=0):
         if comp:
             file = 'lstm_weights_comp_{}.pkl'.format(comp)
             print('use compressed model, comp_{}'.format(comp))
         else:
             file = 'lstm_weights.pkl'
 
-        return pickle.load(open(os.path.join(experiment_path, str(experiment_id), 'weights', file), 'rb'))
+        weights = pickle.load(open(os.path.join(experiment_path, str(experiment_id), 'weights', file), 'rb'))
 
-    def predict(self, index, reset=False):
+        # temp code for shu compression algorithm
+        # make this a model parameter once done
+        use_hash_code = False
+        if use_hash_code:
+            M = 32
+            K = 16
+            code = np.loadtxt(open(os.path.join(experiment_path, str(experiment_id), 'weights', 'LM.codes'), 'r'), dtype=np.int)
+            codebook = np.load(open(os.path.join(experiment_path, str(experiment_id), 'weights', 'LM.codebook.npy'), 'rb'))
+
+            LM = np.zeros((code.shape[0], codebook[0].shape[0]))
+            for row in range(LM.shape[0]):
+                c = code[row]
+                LM[row, :] = np.sum([codebook[i*K+x] for i, x in enumerate(c)], axis=0)
+
+            print('hash coded embedding loaded')
+
+            print('distance {}'.format(np.mean(np.linalg.norm(LM - weights['LM'], axis=1).tolist())))
+
+            weights['LM'] = LM
+
+            np.save('LM.npy', LM)
+
+        return weights
+
+
+
+    def predict(self, index, vocab=None, reset=False):
         if reset: # hidden and cell should be set before using this function
             self.hidden = np.zeros(shape=self.hidden.shape)
             self.cell = np.zeros(shape=self.cell.shape)
 
         self._lstm_cell(index)
-        y = self._project()
+
+        y = self._project(vocab)
+
         pred = softmax(y)
+
         return pred
+
+        return np.random.rand(len(index), 50001)
 
     def _lstm_cell(self, index):
         # embedding lookup
@@ -103,7 +135,7 @@ class LSTM_Model():
         # new hidden transformation matrix
         self.hidden = np.multiply(tanh(self.cell), o)
 
-    def _project(self):
+    def _project(self, vocab=None):
         # output word representation
         if self.share_embedding:
             if self.config['D_softmax']:
@@ -111,53 +143,84 @@ class LSTM_Model():
                 y = []
                 col_s = 0
                 for i, (size, s, e) in enumerate(self.config['embedding_seg']):
-                    y.append(np.dot(temp[:, col_s: col_s + size], self.blocks[i].T))
+                    if vocab:
+                        if e is None:
+                            e = sys.maxsize
+                        sub_vocab_lookup = [v - s for v in vocab if v >= s and v < e]
+                        y.append(np.dot(temp[:, col_s: col_s + size], self.blocks[i][sub_vocab_lookup].T))
+                    else:
+                        y.append(np.dot(temp[:, col_s: col_s + size], self.blocks[i].T))
                     col_s += size
-                y = np.concatenate(y, axis=1) + self.weights['b2']
+                if vocab:
+                    y = np.concatenate(y, axis=1) + self.weights['b2'][vocab]
+                else:
+                    y = np.concatenate(y, axis=1) + self.weights['b2']
             elif self.config['V_table']:
                 temp = np.dot(self.hidden, self.weights["PM"])
                 y = []
-                for i, seg in enumerate(self.config['embedding_seg']):
-                    if i != 0:
-                        y.append(np.dot(np.dot(temp, self.v_tables[i].T), self.blocks[i].T))
+                for i, (size, s, e) in enumerate(self.config['embedding_seg']):
+                    if vocab:
+                        if e is None:
+                            e = sys.maxsize
+                        sub_vocab_lookup = [v - s for v in vocab if v >= s and v < e]
+                        if i != 0:
+                            y.append(np.dot(np.dot(temp, self.v_tables[i].T), self.blocks[i][sub_vocab_lookup].T))
+                        else:
+                            y.append(np.dot(temp, self.blocks[i][sub_vocab_lookup].T))
                     else:
-                        y.append(np.dot(temp, self.blocks[i].T))
-                y = np.concatenate(y, axis=1) + self.weights['b2']
+                        if i != 0:
+                            y.append(np.dot(np.dot(temp, self.v_tables[i].T), self.blocks[i].T))
+                        else:
+                            y.append(np.dot(temp, self.blocks[i].T))
+                if vocab:
+                    y = np.concatenate(y, axis=1) + self.weights['b2'][vocab]
+                else:
+                    y = np.concatenate(y, axis=1) + self.weights['b2']
             else:
-                y = np.dot(np.dot(self.hidden, self.weights["PM"]), self.weights["LM"].T) + self.weights['b2']
+                if vocab:
+                    y = np.dot(np.dot(self.hidden, self.weights["PM"]), self.weights["LM"][vocab].T) + self.weights['b2'][vocab]
+                else:
+                    y = np.dot(np.dot(self.hidden, self.weights["PM"]), self.weights["LM"].T) + self.weights['b2']
         else:
-            y = np.dot(self.hidden, self.weights['UM']) + self.weights['b2']
+            if vocab:
+                y = np.dot(self.hidden, self.weights['UM'][vocab]) + self.weights['b2'][vocab]
+            else:
+                y = np.dot(self.hidden, self.weights['UM']) + self.weights['b2']
 
         return y
 
-    def predict_with_context(self, index, hidden, cell):
+    def predict_with_context(self, index, hidden, cell, vocab=None):
         self.hidden = hidden
         self.cell = cell
-        return self.predict(index), self.hidden, self.cell
+        return self.predict(index, vocab), self.hidden, self.cell
 
     def evaluate(self, start, inputs):
         probs = []
-        pred = self.predict([start], True)
+        pred = self.predict([start], vocab=None, reset=True)
         for input in inputs:
             probs.append(pred[0, input])
             pred = self.predict([input])
-        return probs
+        return [-np.log(p) for p in probs]
 
 def show_prob(inputs):
     results = model.evaluate(w2i['<eos>'], [w2i[word] for word in inputs])
     print(results)
-    print(sum([-np.log(prob) for prob in results]))
+    print(sum([np.log(prob) for prob in results]))
 
 if __name__ == "__main__":
     # test the model
+    experiment_id = 22
     config = json.loads(open(os.path.join(experiment_path, str(experiment_id), "config.json"), "rt").read())
-    vocab = Vocab(config['vocab_size'])
+    vocab = Vocab(config['vocab_size'], char_based=config['char_rnn'])
     i2w = vocab.i2w
     w2i = vocab.w2i
-    model = LSTM_Model()
+    model = LSTM_Model(experiment_id=experiment_id)
     starting_text = '<eos>'
     result = []
     step = 0
+
+    #print(sum(model.evaluate(w2i[starting_text], [w2i[x] for x in 'ことも無'])))
+    #print(sum(model.evaluate(w2i[starting_text], [w2i[x] for x in 'こともむ'])))
 
     while True:
         result.append(starting_text)
