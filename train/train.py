@@ -1,7 +1,6 @@
 import time
 import tensorflow as tf
 from model import RNNLM_Model
-from model_class import CRNNLM_Model
 import sys
 sys.path.append('..')
 from config import train_path, experiment_path, ExperimentConfig
@@ -13,10 +12,10 @@ ex.observers.append(FileStorageObserver.create("experiments"))
 # set parameters here so they can be shared between the experiment observer and the model
 parameters = {
     "debug": False,
-    "gpu_id": 2,
+    "gpu_id": 1,
     "vocab_size": 100000,
     "optimizer": "adam",
-    "batch_size": 128 * 2,
+    "batch_size": 128,
     "embed_size": 256,
     "hidden_size": 256,
     "num_steps": 20,
@@ -25,14 +24,14 @@ parameters = {
     "dropout": 0.9,
     "lr": 0.001,
     "tf_random_seed": 101,
-    "share_embedding": False,
+    "share_embedding": True,
     "D_softmax": False,
     "V_table": False,
     "embedding_seg": [(256, 0, 4000), (128, 4000, 12000), (64, 12000, None)],
     "char_rnn": False,
     "self_norm": True,
     "norm_weight": 0.1,
-    "class_based": True,
+    "class_based": False,
     "class_size": 200,
 }
 

@@ -34,8 +34,8 @@ class RNNLM_Model():
         # Cast o to float64 as there are numerical issues (i.e. sum(output of softmax) = 1.00000298179 and not 1)
         self.predictions = [tf.nn.softmax(tf.cast(o, 'float64')) for o in projection_outputs[0]]
 
-        self.calculate_loss = self.add_loss_op(projection_outputs)
-        self.train_step = self.add_training_op(self.calculate_loss)
+        loss = self.add_loss_op(projection_outputs)
+        self.train_step = self.add_training_op(loss)
 
         self.create_summaries()
 
@@ -221,7 +221,9 @@ class RNNLM_Model():
                 loss += tf.losses.sparse_softmax_cross_entropy(
                     tf.reshape(self.labels_placeholder, [-1]) % self.config.class_size, sub_class_output)
             else:
-                loss += tf.losses.sparse_softmax_cross_entropy(tf.reshape(self.labels_placeholder, [-1]), output)
+                softmax_loss = tf.losses.sparse_softmax_cross_entropy(tf.reshape(self.labels_placeholder, [-1]), output)
+                self.calculate_loss = softmax_loss
+                loss += softmax_loss
 
             if self.config.self_norm:
                 # log(z)^2 where z is the base of softmax
