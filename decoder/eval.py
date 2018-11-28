@@ -106,6 +106,20 @@ class Evaluator:
             print('{} pairs load'.format(len(x)))
             return x, y
 
+def parse_log():
+    for folder, subs, files in os.walk('./'):
+            for filename in files:
+                if 'eval_log' in filename:
+                    print(filename)
+                    path = os.path.join(folder, filename)
+                    with open(path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            if 'best_hit' in line:
+                                print(line.strip())
+
+parse_log()
+
 if __name__ == '__main__':
     eval = Evaluator()
     eval.evaluate()

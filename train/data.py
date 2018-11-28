@@ -14,7 +14,7 @@ from config import experiment_path, experiment_id
 
 class Vocab(object):
     def __init__(self, size):
-        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size]
+        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size-1]
         # put unk to top.
         # otherwise, if freq if provided, sort with freq
         self.lexicon = [('<unk>', 0)] + self.lexicon

@@ -4,6 +4,7 @@ import numpy as np
 import pickle
 import tensorflow as tf
 from data import Vocab, CharVocab, Corpus
+from tensorflow.contrib.legacy_seq2seq import sequence_loss
 from utils import *
 sys.path.append('..')
 from config import get_configs, experiment_path, data_path
@@ -11,19 +12,15 @@ from config import get_configs, experiment_path, data_path
 # the RNNLM code borrowed sample code from http://cs224d.stanford.edu/assignment2/index.html
 class RNNLM_Model():
     def __init__(self, config, load_corpus=False):
-        print('RNNLM loaded')
         # init
         self.config = config
-        self.load_dict()
-        if self.config.D_softmax:
-            self.build_D_softmax_mask()
-        if self.config.V_table:
-            self.build_embedding_from_V_tables()
 
-        # output softmax dim
-        self.num_classes = len(self.vocab)
-        if self.config.class_based:
-            self.num_classes = len(self.vocab) // self.config.class_size
+        self.load_dict()
+        if load_corpus:
+            self.load_corpus()
+
+        # load pre-trained embedding
+        self.LM = np.load(os.path.join(data_path, 'LM.npy'))
 
         # define model graph
         self.add_placeholders()
@@ -32,58 +29,11 @@ class RNNLM_Model():
         projection_outputs = self.add_projection(rnn_outputs)
 
         # Cast o to float64 as there are numerical issues (i.e. sum(output of softmax) = 1.00000298179 and not 1)
-        self.predictions = [tf.nn.softmax(tf.cast(o, 'float64')) for o in projection_outputs[0]]
-
-        self.calculate_loss = self.add_loss_op(projection_outputs)
+        self.predictions = [tf.nn.softmax(tf.cast(o, 'float64')) for o in projection_outputs]
+        # Reshape the output into len(vocab) sized chunks - the -1 says as many as needed to evenly divide
+        output = tf.reshape(tf.concat(projection_outputs, 1), [-1, len(self.vocab)])
+        self.calculate_loss = self.add_loss_op(output)
         self.train_step = self.add_training_op(self.calculate_loss)
-
-        self.create_summaries()
-
-        if load_corpus:
-            self.load_corpus()
-
-    def build_embedding_from_V_tables(self):
-        with tf.variable_scope('embedding'):
-            # variable table is a variation to differentiated softmax. Instead of concat embeddings from different zone,
-            # it uses matrix factorization to decompose each zone |V1| x e into |V1| x e1 and e1 x e.
-            # Implementation wise, we define both matrix at initialization and train them all together.
-            self.blocks = []
-            self.v_tables = []
-            embeddings = []
-            self.config.embed_size = self.config.embedding_seg[0][0]
-            for i, (size, s, e) in enumerate(self.config.embedding_seg):
-                if e is None:
-                    e = len(self.vocab)
-                block = tf.get_variable('LM{}'.format(i), [e-s, size])
-                self.blocks.append(block)
-                if i != 0:
-                    table = tf.get_variable('VT{}'.format(i), [size, self.config.embed_size])
-                    self.v_tables.append(table)
-                    embeddings.append(tf.matmul(block, table))
-                else:
-                    embeddings.append(block)
-
-            self.v_table_embedding = tf.concat(embeddings, axis=0)
-
-    def build_D_softmax_mask(self):
-        # differentiated softmax will split the vocab in different segmentation
-        # each segmentation has a unique embedding size, e.g.
-        # A 0 0
-        # 0 B 0
-        # 0 0 C
-        # block A (|Va| x 200), B (|Vb| x 100), C (|Vc| x 50), the embedding size is 200 + 100 + 50
-        # the rest of the parts are filled with zeros and should not be used.
-        # block A, B, C are essentially different embedding matrices, putting them together is for simple lookup
-        self.config.embed_size = sum([x[0] for x in self.config.embedding_seg])
-        D_softmax_mask = np.zeros((len(self.vocab), self.config.embed_size))
-        col_s = 0
-        for size, s, e in self.config.embedding_seg:
-            if e is None:
-                e = len(self.vocab)
-            # fill each block with ones as mask
-            D_softmax_mask[s:e, col_s:col_s + size] = np.ones((e - s, size))
-            col_s += size
-        self.D_softmax_mask = tf.constant(D_softmax_mask, dtype=tf.float32)
 
     def load_corpus(self):
         self.corpus = Corpus(self.vocab, self.config.debug)
@@ -106,13 +56,9 @@ class RNNLM_Model():
 
     def add_embedding(self):
         with tf.variable_scope('embedding'):
-            embedding = tf.get_variable('LM', [len(self.vocab), self.config.embed_size])
-
-            if self.config.V_table:
-                embedding = self.v_table_embedding
-            elif self.config.D_softmax:
-                # use mask to keep only the blocks in this patched embedding matrix
-                embedding = tf.multiply(embedding, self.D_softmax_mask)
+            # embedding = tf.get_variable('LM', [len(self.vocab), self.config.embed_size])
+            print('locked embedding')
+            embedding = tf.get_variable('LM', initializer=tf.constant(self.LM.astype(np.float32)), trainable=False)
 
             inputs = tf.nn.embedding_lookup(embedding, self.input_placeholder)
             inputs = [tf.squeeze(x, [1]) for x in tf.split(inputs, self.config.num_steps, 1)]
@@ -176,88 +122,35 @@ class RNNLM_Model():
 
         if self.config.share_embedding:
             with tf.variable_scope('embedding', reuse=True):
-                embedding = tf.get_variable('LM')
-
-        if self.config.V_table:
-            embedding = self.v_table_embedding
-        elif self.config.D_softmax:
-            embedding = tf.multiply(embedding, self.D_softmax_mask)
+                #embedding = tf.get_variable('LM')
+                embedding = tf.get_variable('LM', initializer=tf.constant(self.LM.astype(np.float32)), trainable=False)
 
         with tf.variable_scope('Projection'):
             if self.config.share_embedding:
                 P = tf.get_variable('PM', [self.config.hidden_size, self.config.embed_size])
                 U = tf.matmul(P, tf.transpose(embedding))
             else:
-                U = tf.get_variable('UM', [self.config.hidden_size, self.num_classes])
+                U = tf.get_variable('UM', [self.config.hidden_size, len(self.vocab)])
 
-            proj_b = tf.get_variable('b2', [self.num_classes])
-
-            sub_class_outputs = None
-            if self.config.class_based:
-                c_M = tf.get_variable('CM', [self.config.hidden_size, self.config.class_size])
-                c_b = tf.get_variable('b3', [self.config.class_size])
-                sub_class_outputs = [tf.matmul(o, c_M) + c_b for o in rnn_outputs]
-
+            proj_b = tf.get_variable('b2', [len(self.vocab)])
             outputs = [tf.matmul(o, U) + proj_b for o in rnn_outputs]
 
-        return (outputs, sub_class_outputs)
+        return outputs
 
-    def add_loss_op(self, projection_outputs):
+    def add_loss_op(self, output):
         with tf.name_scope('losses'):
-            loss = 0
-
-            outputs = projection_outputs[0]
-            # Reshape the output into len(vocab) sized chunks - the -1 says as many as needed to evenly divide
-            output = tf.reshape(tf.concat(outputs, 1), [-1, self.num_classes])
-
-            if self.config.class_based:
-                # loss for an item in a class
-                loss += tf.losses.sparse_softmax_cross_entropy(
-                    tf.reshape(self.labels_placeholder // self.config.class_size, [-1]), output)
-
-                # loss against each item in its own sub-class
-                sub_class_outputs = projection_outputs[1]
-                sub_class_output = tf.reshape(tf.concat(sub_class_outputs, 1), [-1, self.config.class_size])
-                loss += tf.losses.sparse_softmax_cross_entropy(
-                    tf.reshape(self.labels_placeholder, [-1]) % self.config.class_size, sub_class_output)
-            else:
-                loss += tf.losses.sparse_softmax_cross_entropy(tf.reshape(self.labels_placeholder, [-1]), output)
-
-            if self.config.self_norm:
-                # log(z)^2 where z is the base of softmax
-                variance = tf.reduce_mean(tf.square(tf.log(tf.reduce_sum(tf.exp(output), 1))))
-                loss += (variance * self.config.norm_weight)
-
-                self.variance = variance
-
-                if self.config.class_based:
-                    sub_class_variance = tf.reduce_mean(tf.square(tf.log(tf.reduce_sum(tf.exp(sub_class_output), 1))))
-                    loss += (sub_class_variance * self.config.norm_weight)
-
-                    self.sub_class_variance = sub_class_variance
-
-            return loss
+            all_ones = [tf.ones([self.config.batch_size * self.config.num_steps])]
+            # sequence loss is the mean of batch and sentence loss
+            cross_entropy = sequence_loss([output], [tf.reshape(self.labels_placeholder, [-1])], all_ones, len(self.vocab))
+            return cross_entropy
 
     def add_training_op(self, loss):
         with tf.variable_scope("training", reuse=None):
-            if self.config.optimizer == 'adam':
-                optimizer = tf.train.AdamOptimizer(self.config.lr)
-            else:
-                optimizer = tf.train.RMSPropOptimizer(self.config.lr)
+            optimizer = tf.train.AdamOptimizer(self.config.lr)
             train_op = optimizer.minimize(loss)
         return train_op
 
-    def create_summaries(self):
-        with tf.name_scope("summaries"):
-            tf.summary.scalar("loss", self.calculate_loss)
-            tf.summary.scalar("pp", tf.exp(self.calculate_loss))
-            if self.config.self_norm:
-                tf.summary.scalar("variance", self.variance)
-                if self.config.class_based:
-                    tf.summary.scalar("sub_class_variance", self.sub_class_variance)
-            self.summary_op = tf.summary.merge_all()
-
-    def run_epoch(self, session, epoch, data, writer=None, train_op=None, verbose=10):
+    def run_epoch(self, session, data, train_op=None, verbose=10):
         config = self.config
         dp = config.dropout
         if not train_op:
@@ -279,11 +172,8 @@ class RNNLM_Model():
                     self.initial_cell: cell,
                     self.dropout_placeholder: dp}
 
-            loss, state, cell, _, summary = session.run(
-                [self.calculate_loss, self.final_state, self.final_cell, train_op, self.summary_op], feed_dict=feed)
-
-            if writer:
-                writer.add_summary(summary, global_step=epoch*total_steps + step)
+            loss, state, cell, _ = session.run(
+                [self.calculate_loss, self.final_state, self.final_cell, train_op], feed_dict=feed)
 
             total_loss.append(loss)
             if verbose and step % verbose == 0:
@@ -296,3 +186,4 @@ class RNNLM_Model():
 
 if __name__ == "__main__":
     print("")
+    model = RNNLM_Model(None)
