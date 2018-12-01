@@ -7,12 +7,13 @@ import sys
 sys.path.append('..')
 from config import data_path, experiment_path
 from train.data import Vocab
+import time
 
 def sigmoid(x):
     return 1 / (np.exp(-x) + 1)
 
 def softmax(w):
-    assert w.ndim == 2, 'ERROR: in softmax, dim of w is not 1 or 2 but %d' % w.ndim
+    assert w.ndim == 2 or w.ndim == 1, 'softmax dim error %d' % w.ndim
     w = np.expand_dims(w, axis=0) if w.ndim == 1 else w
     e = np.exp(w - np.amax(w, axis=1, keepdims=True))
     dist = e / np.sum(e, axis=1, keepdims=True)
@@ -102,22 +103,22 @@ class LSTM_Model():
 
         return weights
 
-
-
-    def predict(self, index, vocab=None, reset=False):
+    def predict(self, index, vocab=None, reset=False, self_norm=False):
         if reset: # hidden and cell should be set before using this function
             self.hidden = np.zeros(shape=self.hidden.shape)
             self.cell = np.zeros(shape=self.cell.shape)
 
+        start_time = time.time()
         self._lstm_cell(index)
+        log_lstm_time = time.time() - start_time
 
-        y = self._project(vocab)
+        start_time = time.time()
+        y = self.project(self.hidden, vocab)
+        if not self_norm:
+            pred = softmax(y)
+        log_softmax_time = time.time() - start_time
 
-        pred = softmax(y)
-
-        return pred
-
-        return np.random.rand(len(index), 50001)
+        return pred, y, log_lstm_time, log_softmax_time
 
     def _lstm_cell(self, index):
         # embedding lookup
@@ -135,11 +136,11 @@ class LSTM_Model():
         # new hidden transformation matrix
         self.hidden = np.multiply(tanh(self.cell), o)
 
-    def _project(self, vocab=None):
+    def project(self, hidden, vocab=None):
         # output word representation
         if self.share_embedding:
             if self.config['D_softmax']:
-                temp = np.dot(self.hidden, self.weights["PM"])
+                temp = np.dot(hidden, self.weights["PM"])
                 y = []
                 col_s = 0
                 for i, (size, s, e) in enumerate(self.config['embedding_seg']):
@@ -156,7 +157,7 @@ class LSTM_Model():
                 else:
                     y = np.concatenate(y, axis=1) + self.weights['b2']
             elif self.config['V_table']:
-                temp = np.dot(self.hidden, self.weights["PM"])
+                temp = np.dot(hidden, self.weights["PM"])
                 y = []
                 for i, (size, s, e) in enumerate(self.config['embedding_seg']):
                     if vocab:
@@ -178,14 +179,14 @@ class LSTM_Model():
                     y = np.concatenate(y, axis=1) + self.weights['b2']
             else:
                 if vocab:
-                    y = np.dot(np.dot(self.hidden, self.weights["PM"]), self.weights["LM"][vocab].T) + self.weights['b2'][vocab]
+                    y = np.dot(np.dot(hidden, self.weights["PM"]), self.weights["LM"][vocab].T) + self.weights['b2'][vocab]
                 else:
-                    y = np.dot(np.dot(self.hidden, self.weights["PM"]), self.weights["LM"].T) + self.weights['b2']
+                    y = np.dot(np.dot(hidden, self.weights["PM"]), self.weights["LM"].T) + self.weights['b2']
         else:
             if vocab:
-                y = np.dot(self.hidden, self.weights['UM'][vocab]) + self.weights['b2'][vocab]
+                y = np.dot(hidden, self.weights['UM'][vocab]) + self.weights['b2'][vocab]
             else:
-                y = np.dot(self.hidden, self.weights['UM']) + self.weights['b2']
+                y = np.dot(hidden, self.weights['UM']) + self.weights['b2']
 
         return y
 

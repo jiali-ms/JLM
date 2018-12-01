@@ -5,6 +5,7 @@ import json
 from random import shuffle
 import sys
 from decoder import Decoder, CharRNNDecoder
+from decoder_dynamic import DynamicDecoder
 from decoder_ngram import NGramDecoder
 sys.path.append('..')
 from config import data_path, experiment_path
@@ -15,15 +16,16 @@ import time
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--experiment_id", "-e", type=int, default=16, help="experiment id to eval")
+parser.add_argument("--eval_size", "-es", type=int, default=100, help="Number of sentences to evaluate")
 parser.add_argument("--use_ngram", "-ng", type=bool, default=False, help="Use ngram decoder or not")
 parser.add_argument("--ngram_order", "-o", type=int, default=3, help="Ngram order")
-parser.add_argument("--eval_size", "-es", type=int, default=100, help="Number of sentences to evaluate")
 parser.add_argument("--comp", "-c", type=int, default=0, help="Compression bit, 0 means no compression")
 parser.add_argument("--vocab_select", "-vs", type=bool, default=False, help="Use vocab select method or not")
 parser.add_argument("--top_sampling", "-ts", type=bool, default=False, help="Sampling strategy for vocab select")
 parser.add_argument("--random_sampling", "-rs", type=bool, default=False, help="Sampling strategy for vocab select")
 parser.add_argument("--samples", "-s", type=int, default=0, help="Samples when using advanced sampling")
 parser.add_argument("--beam_size", "-b", type=int, default=10, help="Beam size for decoder")
+parser.add_argument("--dynamic_decoding", "-dd", type=bool, default=False, help="Use incremental decoding or not")
 
 args = parser.parse_args()
 
@@ -34,12 +36,13 @@ class Evaluator:
         self.w2i = vocab.w2i
 
         if args.use_ngram:
-            self.decoder = NGramDecoder(ngram_order=args.ngram_order)
+            self.decoder = NGramDecoder(experiment_id=args.experiment_id, ngram_order=args.ngram_order)
         elif self.config['char_rnn']:
             self.decoder = CharRNNDecoder(experiment_id=args.experiment_id, comp=args.comp)
+        elif args.dynamic_decoding:
+            self.decoder = DynamicDecoder(experiment_id=args.experiment_id, comp=args.comp)
         else:
             self.decoder = Decoder(experiment_id=args.experiment_id, comp=args.comp)
-
 
     def evaluate(self):
         """
@@ -56,9 +59,10 @@ class Evaluator:
         else:
             decoder_type = "neural"
 
-        with open('eval_log_{}_e_{}_size_{}_b_{}_comp_{}_vocab_sel_{}_samples_{}_top_{}_random_{}.txt'.format(
+        with open('eval/eval_log_{}_e_{}_dynamic_{}_size_{}_b_{}_comp_{}_vocab_sel_{}_samples_{}_top_{}_random_{}.txt'.format(
                 decoder_type,
                 args.experiment_id,
+                args.dynamic_decoding,
                 args.eval_size,
                 args.beam_size,
                 args.comp,
@@ -93,15 +97,24 @@ class Evaluator:
             f.write('best_hit {} nbest_hit{} no_hit {} eval_size {}'.format(best_hit, n_best_hit,
                                                                             args.eval_size-best_hit-n_best_hit,
                                                                             args.eval_size))
-            f.write("--- %s seconds per prediction ---" % (np.mean(self.decoder.perf_log)))
-            f.write("--- %s seconds per decoding---" % (np.sum(self.decoder.perf_log) / self.decoder.perf_sen))
+
+            if not args.use_ngram:
+                f.write("--- %s seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
+                f.write("--- %s seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
+                f.write("--- %s seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
+
             f.write("--- %s seconds ---" % (time.time() - start_time))
 
             print('best_hit {} nbest_hit{} no_hit {} eval_size {}'.format(best_hit, n_best_hit,
                                                                           args.eval_size-best_hit-n_best_hit,
                                                                           args.eval_size))
-            print("--- %s seconds per prediction ---" % (np.mean(self.decoder.perf_log)))
-            print("--- %s seconds per decoding---" % (np.sum(self.decoder.perf_log) / self.decoder.perf_sen))
+            if not args.use_ngram:
+                print("--- %s seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
+                print("--- %s seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
+                print("--- %s seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
+
+            if args.dynamic_decoding:
+                print("--- %s seconds per step for vocab fix.---" % np.mean(self.decoder.perf_log_fix_vocab))
             print("--- %s seconds ---" % (time.time() - start_time))
 
 
@@ -129,6 +142,15 @@ class Evaluator:
                 if not has_oov(tokens):
                     readings = ''.join([x.split('/')[1] if x.split('/')[1] != '' else x.split('/')[0] for x in tokens])
                     target = ''.join([x.split('/')[0] for x in tokens])
+
+                    use_short_sentences = False
+                    if use_short_sentences:
+                    	print('-------------sentence selection used')
+                    
+                    if use_short_sentences:
+                        if len(readings) > 30:
+                            continue
+
                     x.append(readings)
                     y.append(target)
 

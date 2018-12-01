@@ -10,7 +10,7 @@ from copy import deepcopy, copy
 import sys
 import operator
 sys.path.append('..')
-from config import root_path, data_path, train_path, experiment_path, experiment_id
+from config import root_path, data_path, train_path, experiment_path
 from model_ngram import NGramModel
 from train.data import Vocab
 
@@ -35,7 +35,7 @@ class Path():
         return ' '.join(['{}'.format(x.word) for x in self.nodes]) + ': {}'.format(self.neg_log_prob)
 
 class NGramDecoder():
-    def __init__(self, ngram_order=3):
+    def __init__(self, experiment_id, ngram_order=3):
         self.config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
         vocab = Vocab(self.config['vocab_size'])
         self.i2w = vocab.i2w

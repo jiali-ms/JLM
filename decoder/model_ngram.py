@@ -6,7 +6,7 @@ from random import shuffle
 import math
 import sys
 sys.path.append('..')
-from config import data_path, experiment_path, experiment_id
+from config import data_path, experiment_path
 
 class NGramModel():
     """N-gram model that take arpa file as input and provide probability with previous words.

@@ -11,7 +11,7 @@ import sys
 import operator
 sys.path.append('..')
 from config import root_path, data_path, train_path, experiment_path
-from model import LSTM_Model
+from model import LSTM_Model, softmax
 from train.data import Vocab
 
 class Node():
@@ -33,8 +33,11 @@ class Path():
         self.nodes = [node]
         self.cell = np.zeros((1, hidden_size))
         self.state = np.zeros((1, hidden_size))
+        self.hidden = None
         self.neg_log_prob = 0.0  # accumulated neg log of the each node to node prob becomes the path neg log prob
         self.transition_probs = []  # note this is not neg log prob
+        self.logits = []  # y output from model, cache it to re-calculate softmax
+        self.prev_path = None
 
     def append_node(self, node, node_prob_idx):
         self.nodes.append(node)
@@ -45,7 +48,7 @@ class Path():
             self.neg_log_prob += -math.log(prob)
 
     def __str__(self):
-        return ' '.join(['{}'.format(x.word) for x in self.nodes]) + ': {}'.format(self.neg_log_prob)
+        return ' '.join(['{}'.format(x.word.split('/')[0]) for x in self.nodes]) + ': {}'.format(self.neg_log_prob)
 
 class Decoder():
     def __init__(self, experiment_id=0, comp=0):
@@ -61,7 +64,8 @@ class Decoder():
 
         self.lattice_vocab = None
         self.perf_sen = 0
-        self.perf_log = []
+        self.perf_log_lstm = []
+        self.perf_log_softmax = []
 
     def _load_vocab(self):
         self.vocab = Vocab(self.config['vocab_size'], self.config['char_rnn'])
@@ -124,26 +128,37 @@ class Decoder():
                 if len(backward_lookup[i + 1]) == 0:
                     backward_lookup[i + 1].append(Node(i, 1, self.w2i['<unk>'], input[i]))
 
+        if vocab_select:
+            self._build_lattice_vocab(backward_lookup, samples, top_sampling, random_sampling)
+
+        return backward_lookup
+
+    def _build_lattice_vocab(self, backward_lookup, samples=0, top_sampling=False, random_sampling=False):
         # vocab selection is an advanced pruning algorithm to limit the vocab space in a specified
         # conversion task. It will avoid calculating softmax for the full vocab.
         def lattice_vocab(backward_lookup):
             return sorted(list(set(sum([[node.word_idx for node in nodes] for nodes in backward_lookup.values()], []))))
 
-        if vocab_select:
-            self.lattice_vocab = lattice_vocab(backward_lookup)
+        self.lattice_vocab = lattice_vocab(backward_lookup)
 
-            if samples:
-                if random_sampling:
-                    samples = np.random.randint(len(self.w2i), size=samples)
-                    self.lattice_vocab += [x for x in samples]
-                elif top_sampling:
-                    self.lattice_vocab += [x for x in range(samples)]
-                self.lattice_vocab = sorted(list(set(self.lattice_vocab)))
+        if samples:
+            if random_sampling:
+                samples = np.random.randint(len(self.w2i), size=samples)
+                self.lattice_vocab += [x for x in samples]
+            elif top_sampling:
+                self.lattice_vocab += [x for x in range(samples)]
+            self.lattice_vocab = sorted(list(set(self.lattice_vocab)))
 
-            #if self.lattice_vocab:
-                #print('{} vocab selected'.format(len(self.lattice_vocab)))
+        #if self.lattice_vocab:
+        #    print('{} vocab selected'.format(len(self.lattice_vocab)))
 
-        return backward_lookup
+    def _frame_vocab(self, frame):
+        if type(self.lattice_vocab) is list:
+            return self.lattice_vocab
+        elif type(self.lattice_vocab) is dict:
+            return self.lattice_vocab[frame]
+        else:
+            return None
 
     def _build_current_frame(self, nodes, frame, idx):
         # frame 0 contains one path that has eos_node
@@ -155,44 +170,53 @@ class Decoder():
         frame[idx] = []
         for node in nodes:
             for prev_path in frame[node.start_idx]:
-                cur_paths = copy(prev_path)  # shallow copy to avoid create dup objects
-                cur_paths.nodes = copy(prev_path.nodes)
-                cur_node = copy(node)
+                # shallow copy to avoid create dup objects
+                # note that numpy arrays like state and cell are copied also
+                cur_path = copy(prev_path)
+                cur_path.nodes = copy(prev_path.nodes)
                 node_prob_idx = node.word_idx
                 if self.lattice_vocab:
-                    node_prob_idx = self.lattice_vocab.index(node_prob_idx)
-                cur_paths.append_node(cur_node, node_prob_idx)
-                frame[idx].append(cur_paths)
+                    node_prob_idx = self._frame_vocab(idx).index(node_prob_idx)
+                cur_path.append_node(node, node_prob_idx)
+                frame[idx].append(cur_path)
 
-    def _predict(self, paths):
-        start_time = time.time()
+    def _predict(self, paths, vocab=None):
+        log_lstm = []
+        log_softmax = []
         for i, path in enumerate(paths):
-            p, s, c = self.model.predict_with_context([path.nodes[-1].word_idx],
+            (p, logits, log_lstm_time, log_softmax_time), s, c = self.model.predict_with_context([path.nodes[-1].word_idx],
                                                       path.state,
                                                       path.cell,
-                                                      self.lattice_vocab)
+                                                      vocab)
+            log_lstm.append(log_lstm_time)
+            log_softmax.append(log_softmax_time)
 
             path.state = s
             path.cell = c
             path.transition_probs = p
 
-        self.perf_log.append(time.time() - start_time)
+        self.perf_log_lstm.append(sum(log_lstm))
+        self.perf_log_softmax.append(sum(log_softmax))
 
-    def _batch_predict(self, paths):
+    def _batch_predict(self, paths, vocab=None):
         # print('batch predict paths {}'.format(len(paths)))
         start_time = time.time()
 
-        pred, state, cell = self.model.predict_with_context([path.nodes[-1].word_idx for path in paths],
+        (pred, logits, log_lstm_time, log_softmax_time), state, cell = self.model.predict_with_context([path.nodes[-1].word_idx for path in paths],
                                                             np.concatenate([path.state for path in paths], axis=0),
                                                             np.concatenate([path.cell for path in paths], axis=0),
-                                                            self.lattice_vocab)
+                                                            vocab)
 
-        self.perf_log.append(time.time() - start_time)
+        self.perf_log_lstm.append(log_lstm_time)
+        self.perf_log_softmax.append(log_softmax_time)
 
         for i, path in enumerate(paths):
             path.state = np.expand_dims(state[i], axis=0)
             path.cell = np.expand_dims(cell[i], axis=0)
             path.transition_probs = [pred[i]]
+            if self.config['self_norm']:
+                path.transition_probs = [np.exp(logits[i])]
+            path.logits = logits[i]
 
     def decode(self, input, topN=10, beam_width=10, vocab_select=False, samples=0, top_sampling=False, random_sampling=False):
         backward_lookup = self._build_lattice(input, vocab_select=vocab_select, samples=samples, top_sampling=top_sampling, random_sampling=random_sampling)
@@ -208,7 +232,7 @@ class Decoder():
 
             batch_predict = True
             if batch_predict:
-                self._batch_predict(frame[i])
+                self._batch_predict(frame[i], self._frame_vocab(i))
             else:
                 self._predict(frame[i])
 
@@ -319,16 +343,17 @@ class CharRNNDecoder(Decoder):
         return output[:topN]
 
 if __name__ == "__main__":
-    experiment_id = 22
+    experiment_id = 27
     config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
     if config['char_rnn']:
         decoder = CharRNNDecoder(experiment_id)
     else:
         decoder = Decoder(experiment_id)
 
-    result = decoder.decode('ソレカラ、キゲンガイチネンマエニキレテオリマス」', topN=10, beam_width=10, vocab_select=False, samples=200, top_sampling=True, random_sampling=False)
+    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, vocab_select=False, samples=200, top_sampling=False, random_sampling=False)
     for item in result:
-        print('{} \t{}'.format(item[0], ''.join([x for x in item[1]])))
-    # print(decoder.perf_log)
-    print("--- %s seconds per step ---" % (np.mean(decoder.perf_log)))
-    print("--- %s seconds per sentence ---" % (np.sum(decoder.perf_log)/decoder.perf_sen))
+        print('{} \t{}'.format(item[0], ' '.join([x.split('/')[0] for x in item[1]])))
+
+    print("--- %s seconds lstm per step ---" % (np.mean(decoder.perf_log_lstm)))
+    print("--- %s seconds softmax per step ---" % (np.mean(decoder.perf_log_softmax)))
+    print("--- %s seconds per sentence ---" % (np.sum(decoder.perf_log_lstm + decoder.perf_log_softmax) /decoder.perf_sen))
