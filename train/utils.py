@@ -53,7 +53,7 @@ def temp():
 
                 if 'cout.txt' in filename:
                     path = os.path.join(folder, filename)
-                    with open(path, 'r') as f:
+                    with open(path, 'r', encoding='utf-8') as f:
                         lines = f.readlines()
                         for line in lines:
                             if 'Validation perplexity' in line:
@@ -61,4 +61,4 @@ def temp():
                             if 'Test perplexity' in line:
                                 print('test pp')
                                 print(line.strip('\n').split(':')[1].strip())
-temp()
+# temp()

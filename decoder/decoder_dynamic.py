@@ -25,6 +25,7 @@ class DynamicDecoder(Decoder):
         super(DynamicDecoder, self).__init__(experiment_id=experiment_id, comp=comp)
         print('Dynamic RNN decoder loaded')
         self.perf_log_fix_vocab = []  # per log for fix vocabs
+        self.perf_log_fix_lattice_path_prob = [] # per step fix lattice cost
 
     def _build_lattice_vocab(self, backward_lookup, samples=0, top_sampling=False, random_sampling=False):
         self.lattice_vocab = {}
@@ -46,31 +47,110 @@ class DynamicDecoder(Decoder):
 
             # print('{} vocab selected'.format(len(self.lattice_vocab[i])))
 
-
         # print(self.lattice_vocab)
 
-    def _build_current_frame(self, nodes, frame, idx):
+
+    def _build_current_frame(self, frame, i, beam_width):
+        """ Incremental beam search.
+
+            1. find all candidate nodes at current frame
+            2. try to connect to previous frames,
+            run LSTM model to predict next word prob when prob is not yet calculates
+            3. connect and prune to beam size with path prob ranking
+        """
         # frame 0 contains one path that has eos_node
-        if idx == 0:
-            frame[0] = [Path(nodes[0], self.model.hidden_size)]
+        if i == 0:
+            frame[0] = [Path(self.backward_lookup[0][0], self.model.hidden_size)]
             return
 
-        # connect each nodes to its previous best paths, also calculate the new path probability
-        frame[idx] = []
-        for node in nodes:
+        # before start, predict the all the necessary prob that current frame requires to build new paths
+        self._incremental_decode(frame, i)
+
+        # connect each nodes to its previous best paths
+        acc_time = 0
+        frame[i] = []
+        for node in self.backward_lookup[i]:
             for prev_path in frame[node.start_idx]:
                 cur_path = copy(prev_path)  # shallow copy to avoid create dup objects
                 cur_path.nodes = copy(prev_path.nodes)
-                node_prob_idx = self._frame_vocab(idx).index(node.word_idx)
+                node_prob_idx = self._frame_vocab(node.start_idx).index(node.word_idx)
                 cur_path.append_node(node, node_prob_idx)
                 cur_path.prev_path = prev_path
-                frame[idx].append(cur_path)
+                frame[i].append(cur_path)
 
-                self._fix_neg_log(cur_path)
+                if not self.config['self_norm']:
+                    s = time.time()
+                    self._fix_neg_log(cur_path)
+                    acc_time += (time.time() - s)
+
+        self.perf_log_fix_lattice_path_prob.append(acc_time)
+
+        # prune to beam size
+        if beam_width is not None:
+            frame[i].sort(key=lambda x: x.neg_log_prob)
+            frame[i] = frame[i][:beam_width]
+
+    def _incremental_decode(self, frame, i, max_step=None):
+        """Incrementally build path probability distribution.
+
+        A word in current frame may connect to a previous path that has not yet calculated the softmax distribution for
+        the word entry.
+
+        E.g. For a coming nodes x-- with length 3, to connect to a previous path, all the frame C needs to update the
+        softmax distribution to contain x--.
+
+                           A  B  C  D  E  nodes
+                1                x  -  -   x--
+                2                   y  -   y-
+                3             z  -  -  -   z---
+        """
+        paths_to_fix = []  # paths to fix in each frame
+        batch_missing_vocab = set()  # batch all the missing vocab in all previous connected frame
+        frame_diff_vocab = {}  # lookup the diff vocab in a frame
+
+        # fix up all the previous frames.
+        for k in range(i):
+            # sort the diff to ensure order
+            diff_vocab = sorted(set(self.lattice_vocab[i]) - set(self.lattice_vocab[k]))
+
+            if len(diff_vocab):
+                # path in i-1 will be batch predicted.
+                if k != i-1:
+                    paths_to_fix += frame[k]
+
+                frame_diff_vocab[k] = diff_vocab
+
+                # now fix each frame to have same vocab as frame i
+                self.lattice_vocab[k] += diff_vocab
+
+                # print('recalculate frame {} with {} words'.format(k, len(vocab_to_extend)))
+                batch_missing_vocab |= set(diff_vocab)
+
+        # predict the i-1 frame with fixed vocab
+        self._batch_predict(frame[i - 1], self.lattice_vocab[i-1])
+
+        # fix the connection
+        if len(paths_to_fix):
+            missing_vocab = sorted(list(batch_missing_vocab))
+
+            start_time = time.time()
+            logits = self.model.project(np.concatenate([path.state for path in paths_to_fix], axis=0), missing_vocab)
+            self.perf_log_fix_vocab.append(time.time() - start_time)
+
+            for i, path in enumerate(paths_to_fix):
+                assert len(path.logits)
+                diff_vocab = frame_diff_vocab[path.frame_idx]
+                diff_vocab_indices = [missing_vocab.index(x) for x in diff_vocab]
+                path.logits = np.concatenate((path.logits, logits[i][diff_vocab_indices]))
+                if self.config['self_norm']:
+                    path.transition_probs = [np.exp(path.logits)]
+                else:
+                    path.transition_probs = softmax(path.logits)  # recalculate softmax
 
     def _fix_neg_log(self, path):
         """Fix the path probability by recalculating from head.
         """
+
         # build a list of path from begin to end
         paths = []
         tail = path
@@ -80,128 +160,32 @@ class DynamicDecoder(Decoder):
 
         paths = paths[::-1]
 
-        for i in range(1, len(paths)):
+        s = 1
+        max_step = False
+        if max_step:
+            s = max(s, len(paths) - 5)
+
+        for i in range(s, len(paths)):
             cur_path = paths[i]
-            prev_path = paths[i-1]
+            prev_path = paths[i - 1]
             node = cur_path.nodes[-1]
             prob_idx = self.lattice_vocab[node.start_idx].index(node.word_idx)
             new_neg_log_prob = prev_path.neg_log_prob + -math.log(prev_path.transition_probs[0][prob_idx])
             if cur_path.neg_log_prob != new_neg_log_prob:
                 cur_path.neg_log_prob = new_neg_log_prob
 
-    def _dynamic_batch_predict(self, frame, i):
-        """Incrementally build path probability.
-
-        To build a new frame, all the paths need to be connected.
-
-                           A  B  C  D  E  nodes
-                1                x  -  -   x--
-                2                   y  -   y-
-                3             z  -  -  -   z---
-
-        We need to give a vocab for each frame to calculate.
-        For the previous frame, the vocab is the with accumulated lattice words.
-        For the other path to connect, only the missing vocab needs to be append and recalculate softmax.
-        """
-        # print('------build frame {}'.format(i))
-
-        # calculate the previous first
-        # beam size * vocab
-        # print('batch predict frame  size {}'.format(len(frame[i-1])))
-        self._batch_predict(frame[i-1], self.lattice_vocab[i])
-        self.lattice_vocab[i-1] = self.lattice_vocab[i]
-
-        # fix the missing probabilities
-        paths = []
-        path2frame = []
-        missing_vocab = set()  # batch all the missing vocab in all previous connected frame
-        diff_vocab_frame = {}
-
-        # fix up all the previous frames
-        for k in range(i-1):
-            diff_vocab = set(self.lattice_vocab[i]) - set(self.lattice_vocab[k])
-            if len(diff_vocab):
-                paths += frame[k]
-                path2frame += [k] * len(frame[k])
-                vocab_to_extend = sorted(list(diff_vocab))
-                diff_vocab_frame[k] = vocab_to_extend
-                self.lattice_vocab[k] += vocab_to_extend  # extend only
-
-                # print('recalculate frame {} with {} words'.format(k, len(vocab_to_extend)))
-                missing_vocab |= diff_vocab
-
-        if len(paths):
-            missing_vocab = sorted(list(missing_vocab))
-
-            start_time = time.time()
-            logits = self.model.project(np.concatenate([path.state for path in paths], axis=0), missing_vocab)
-            self.perf_log_fix_vocab.append(time.time() - start_time)
-
-            for i, path in enumerate(paths):
-                assert len(path.logits)
-                diff_vocab = diff_vocab_frame[path2frame[i]]
-                diff_vocab_indices = [missing_vocab.index(x) for x in diff_vocab]
-                path.logits = np.concatenate((path.logits, logits[i][diff_vocab_indices]))
-                path.transition_probs = softmax(path.logits)  # recalculate softmax
-
-
-    def _dynamic_batch_predict2(self, frame, i):
-        """ This version recalculate the previous paths.
-        """
-        
-        print('---------non-incremental predict used')
-        
-        # print('------build frame {}'.format(i))
-
-        # calculate the previous first
-        # beam size * vocab
-        # print('batch predict frame  size {}'.format(len(frame[i-1])))
-        self._batch_predict(frame[i-1], self.lattice_vocab[i])
-        self.lattice_vocab[i-1] = self.lattice_vocab[i]
-
-        # fix the missing probabilities
-        paths = []
-        path2frame = []
-
-        # fix up all the previous frames
-        for k in range(i-1):
-            diff_vocab = set(self.lattice_vocab[i]) - set(self.lattice_vocab[k])
-            #if len(diff_vocab):
-            paths += frame[k]
-            path2frame += [k] * len(frame[k])
-            self.lattice_vocab[k] = self.lattice_vocab[i]
-
-        if len(paths):
-            (pred, logits, log_lstm_time, log_softmax_time), state, cell = self.model.predict_with_context([path.nodes[-1].word_idx for path in paths],
-                                                                          np.concatenate([path.prev_path.state if path.prev_path else np.zeros(path.state.shape) for path in paths],
-                                                                                         axis=0),
-                                                                          np.concatenate([path.prev_path.cell if path.prev_path else np.zeros(path.cell.shape) for path in paths],
-                                                                                         axis=0),
-                                                                          self.lattice_vocab[i])
-
-            self.perf_log_fix_vocab.append(log_softmax_time + log_lstm_time)
-
-            for i, path in enumerate(paths):
-                assert len(path.logits)
-                path.logits = logits[i]
-                path.transition_probs = [pred[i]]
-
     def decode(self, input, topN=10, beam_width=10, vocab_select=False, samples=0, top_sampling=False, random_sampling=False):
-        backward_lookup = self._build_lattice(input, vocab_select=vocab_select, samples=samples, top_sampling=top_sampling, random_sampling=random_sampling)
+        self.backward_lookup = self._build_lattice(input, vocab_select=vocab_select, samples=samples, top_sampling=top_sampling, random_sampling=random_sampling)
 
         frame = {}
-        self._build_current_frame(backward_lookup[0], frame, 0)
 
-        for i in range(1, len(input) + 1):
-            # calculate probability distribution of previous frames
-            # so that nodes in current frame can connect to these paths and have path probability
-            self._dynamic_batch_predict(frame, i)
+        # for each step. t_0 is used for start of sentence
+        for i in range(len(input) + 1):
+            self._build_current_frame(frame, i, beam_width)
 
-            self._build_current_frame(backward_lookup[i], frame, i)
-
-            if beam_width is not None:
-                frame[i].sort(key=lambda x: x.neg_log_prob)
-                frame[i] = frame[i][:beam_width]
+            #for path in frame[i]:
+            #    print(path)
+                # print(path.state[0][0])
 
         output = [(x.neg_log_prob, [n.word for n in x.nodes if n.word != "<eos>"]) for x in frame[len(input)]]
 
@@ -210,7 +194,7 @@ class DynamicDecoder(Decoder):
         return output[:topN]
 
 if __name__ == "__main__":
-    experiment_id = 8
+    experiment_id = 27
     use_dynamic_decoder = True
     config = json.loads(open(os.path.join(experiment_path, str(experiment_id), 'config.json'), 'rt').read())
     if config['char_rnn']:
@@ -220,11 +204,12 @@ if __name__ == "__main__":
     else:
         decoder = Decoder(experiment_id)
 
-    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, vocab_select=True, samples=200, top_sampling=True, random_sampling=False)
+    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, vocab_select=True, samples=200, top_sampling=False, random_sampling=False)
     for item in result:
         print('{} \t{}'.format(item[0], ' '.join([x.split('/')[0] for x in item[1]])))
     # print(decoder.perf_log)
-    print("--- %s seconds lstm per step ---" % (np.mean(decoder.perf_log_lstm)))
-    print("--- %s seconds softmax per step ---" % (np.mean(decoder.perf_log_softmax)))
-    print("--- %s seconds per step to fix vocab---" % (np.mean(decoder.perf_log_fix_vocab)))
-    print("--- %s seconds per sentence ---" % (np.sum(decoder.perf_log_lstm + decoder.perf_log_softmax)/decoder.perf_sen))
+    print("--- %f seconds lstm per step ---" % (np.mean(decoder.perf_log_lstm)))
+    print("--- %f seconds softmax per step ---" % (np.mean(decoder.perf_log_softmax)))
+    print("--- %f seconds per step to fix vocab---" % (np.mean(decoder.perf_log_fix_vocab)))
+    print("--- %f seconds per step to fix lattice---" % (np.mean(decoder.perf_log_fix_lattice_path_prob)))
+    print("--- %f seconds per sentence ---" % (np.sum(decoder.perf_log_lstm + decoder.perf_log_softmax)/decoder.perf_sen))

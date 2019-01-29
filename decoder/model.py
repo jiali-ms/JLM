@@ -103,7 +103,7 @@ class LSTM_Model():
 
         return weights
 
-    def predict(self, index, vocab=None, reset=False, self_norm=False):
+    def predict(self, index, vocab=None, reset=False):
         if reset: # hidden and cell should be set before using this function
             self.hidden = np.zeros(shape=self.hidden.shape)
             self.cell = np.zeros(shape=self.cell.shape)
@@ -114,7 +114,9 @@ class LSTM_Model():
 
         start_time = time.time()
         y = self.project(self.hidden, vocab)
-        if not self_norm:
+        if self.config['self_norm']:
+            pred = np.exp(y)
+        else:
             pred = softmax(y)
         log_softmax_time = time.time() - start_time
 

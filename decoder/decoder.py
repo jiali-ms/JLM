@@ -12,7 +12,7 @@ import operator
 sys.path.append('..')
 from config import root_path, data_path, train_path, experiment_path
 from model import LSTM_Model, softmax
-from train.data import Vocab
+from train.data import Vocab, CharVocab
 
 class Node():
     def __init__(self, s, l, idx, word, oov_prob=0.0):
@@ -38,6 +38,7 @@ class Path():
         self.transition_probs = []  # note this is not neg log prob
         self.logits = []  # y output from model, cache it to re-calculate softmax
         self.prev_path = None
+        self.frame_idx = self.nodes[-1].start_idx + self.nodes[-1].reading_length
 
     def append_node(self, node, node_prob_idx):
         self.nodes.append(node)
@@ -68,7 +69,7 @@ class Decoder():
         self.perf_log_softmax = []
 
     def _load_vocab(self):
-        self.vocab = Vocab(self.config['vocab_size'], self.config['char_rnn'])
+        self.vocab = Vocab(self.config['vocab_size'])
         self.i2w = self.vocab.i2w
         self.w2i = self.vocab.w2i
 
@@ -160,15 +161,15 @@ class Decoder():
         else:
             return None
 
-    def _build_current_frame(self, nodes, frame, idx):
+    def _build_current_frame(self, frame, idx):
         # frame 0 contains one path that has eos_node
         if idx == 0:
-            frame[0] = [Path(nodes[0], self.model.hidden_size)]
+            frame[0] = [Path(self.backward_lookup[0][0], self.model.hidden_size)]
             return
 
         # connect each nodes to its previous best paths, also calculate the new path probability
         frame[idx] = []
-        for node in nodes:
+        for node in self.backward_lookup[idx]:
             for prev_path in frame[node.start_idx]:
                 # shallow copy to avoid create dup objects
                 # note that numpy arrays like state and cell are copied also
@@ -214,17 +215,14 @@ class Decoder():
             path.state = np.expand_dims(state[i], axis=0)
             path.cell = np.expand_dims(cell[i], axis=0)
             path.transition_probs = [pred[i]]
-            if self.config['self_norm']:
-                path.transition_probs = [np.exp(logits[i])]
             path.logits = logits[i]
 
     def decode(self, input, topN=10, beam_width=10, vocab_select=False, samples=0, top_sampling=False, random_sampling=False):
-        backward_lookup = self._build_lattice(input, vocab_select=vocab_select, samples=samples, top_sampling=top_sampling, random_sampling=random_sampling)
+        self.backward_lookup = self._build_lattice(input, vocab_select=vocab_select, samples=samples, top_sampling=top_sampling, random_sampling=random_sampling)
 
         frame = {}
         for i in range(len(input) + 1):
-            b_nodes = backward_lookup[i]
-            self._build_current_frame(b_nodes, frame, i)
+            self._build_current_frame(frame, i)
 
             if beam_width is not None:
                 frame[i].sort(key=lambda x: x.neg_log_prob)
@@ -350,7 +348,7 @@ if __name__ == "__main__":
     else:
         decoder = Decoder(experiment_id)
 
-    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, vocab_select=False, samples=200, top_sampling=False, random_sampling=False)
+    result = decoder.decode('キョーワイーテンキデス', topN=10, beam_width=10, vocab_select=True, samples=0, top_sampling=False, random_sampling=False)
     for item in result:
         print('{} \t{}'.format(item[0], ' '.join([x.split('/')[0] for x in item[1]])))
 

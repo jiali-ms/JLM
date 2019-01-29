@@ -10,12 +10,12 @@ from decoder_ngram import NGramDecoder
 sys.path.append('..')
 from config import data_path, experiment_path
 from tqdm import tqdm
-from train.data import Vocab
+from train.data import Vocab, CharVocab
 import time
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--experiment_id", "-e", type=int, default=16, help="experiment id to eval")
+parser.add_argument("--experiment_id", "-e", type=int, default=1, help="experiment id to eval")
 parser.add_argument("--eval_size", "-es", type=int, default=100, help="Number of sentences to evaluate")
 parser.add_argument("--use_ngram", "-ng", type=bool, default=False, help="Use ngram decoder or not")
 parser.add_argument("--ngram_order", "-o", type=int, default=3, help="Ngram order")
@@ -32,8 +32,11 @@ args = parser.parse_args()
 class Evaluator:
     def __init__(self):
         self.config = json.loads(open(os.path.join(experiment_path, str(args.experiment_id), 'config.json'), 'rt').read())
-        vocab = Vocab(self.config['vocab_size'], self.config['char_rnn'])
-        self.w2i = vocab.w2i
+        if self.config['char_rnn']:
+            self.vocab = CharVocab(self.config['vocab_size'])
+        else:
+            self.vocab = Vocab(self.config['vocab_size'])
+        self.w2i = self.vocab.w2i
 
         if args.use_ngram:
             self.decoder = NGramDecoder(experiment_id=args.experiment_id, ngram_order=args.ngram_order)
@@ -99,9 +102,9 @@ class Evaluator:
                                                                             args.eval_size))
 
             if not args.use_ngram:
-                f.write("--- %s seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
-                f.write("--- %s seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
-                f.write("--- %s seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
+                f.write("--- %f seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
+                f.write("--- %f seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
+                f.write("--- %f seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
 
             f.write("--- %s seconds ---" % (time.time() - start_time))
 
@@ -109,13 +112,14 @@ class Evaluator:
                                                                           args.eval_size-best_hit-n_best_hit,
                                                                           args.eval_size))
             if not args.use_ngram:
-                print("--- %s seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
-                print("--- %s seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
-                print("--- %s seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
+                print("--- %f seconds lstm per step ---" % (np.mean(self.decoder.perf_log_lstm)))
+                print("--- %f seconds softmax per step ---" % (np.mean(self.decoder.perf_log_softmax)))
+                print("--- %f seconds per sent.---" % (np.sum(self.decoder.perf_log_lstm + self.decoder.perf_log_softmax) / self.decoder.perf_sen))
 
             if args.dynamic_decoding:
-                print("--- %s seconds per step for vocab fix.---" % np.mean(self.decoder.perf_log_fix_vocab))
-            print("--- %s seconds ---" % (time.time() - start_time))
+                print("--- %f seconds per step for vocab fix.---" % np.mean(self.decoder.perf_log_fix_vocab))
+                print("--- %f seconds per step for lattice path fix.---" % np.mean(self.decoder.perf_log_fix_lattice_path_prob))
+            print("--- %f seconds ---" % (time.time() - start_time))
 
 
     def load_eval_set(self, debug=True):
@@ -137,16 +141,17 @@ class Evaluator:
         with open(os.path.join(data_path, 'test.txt'), 'r', encoding='utf-8') as f:
             lines = f.readlines()
             print('take {} for evaluation from all {} lines'.format(args.eval_size, len(lines)))
+
+            use_short_sentences = False
+            if use_short_sentences:
+                print('-------------sentence selection used')
+
             for line in lines:
                 tokens = line.strip().split(' ')
                 if not has_oov(tokens):
                     readings = ''.join([x.split('/')[1] if x.split('/')[1] != '' else x.split('/')[0] for x in tokens])
                     target = ''.join([x.split('/')[0] for x in tokens])
 
-                    use_short_sentences = False
-                    if use_short_sentences:
-                    	print('-------------sentence selection used')
-                    
                     if use_short_sentences:
                         if len(readings) > 30:
                             continue
@@ -159,6 +164,21 @@ class Evaluator:
 
             print('{} pairs load'.format(len(x)))
             return x, y
+
+
+def parse_log():
+    for folder, subs, files in os.walk('./'):
+            for filename in files:
+                if 'eval_log' in filename:
+                    print(filename)
+                    path = os.path.join(folder, filename)
+                    with open(path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        for line in lines:
+                            if 'best_hit' in line:
+                                print(line.strip())
+
+# parse_log()
 
 if __name__ == '__main__':
     eval = Evaluator()
