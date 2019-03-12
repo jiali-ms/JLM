@@ -10,20 +10,40 @@ from config import get_configs, experiment_path, data_path
 
 
 sys.path.append('..')
-from config import experiment_path, experiment_id
+from config import experiment_path
 
 class Vocab(object):
     def __init__(self, size):
-        lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size]
+        self.lexicon = pickle.load(open(os.path.join(data_path, 'lexicon.pkl'), 'rb'))[:size-1]
         # put unk to top.
         # otherwise, if freq if provided, sort with freq
-        lexicon = [('<unk>', 0)] + lexicon
-        self.w2i = {x[0]:i for i, x in enumerate(lexicon)}
+        self.lexicon = [('<unk>', 0)] + self.lexicon
+        self.w2i = {x[0]:i for i, x in enumerate(self.lexicon)}
         self.i2w = {v:k for k,v in self.w2i.items()}
         print('vocab with size {} loaded'.format(size))
 
     def __len__(self):
         return len(self.w2i)
+
+class CharVocab(Vocab):
+    def __init__(self, size):
+        super(CharVocab, self).__init__(size)
+        # build char to index for char RNN
+        self.c2i = {}
+        self.c2i['<unk>'] = 0
+        self.c2i['<eos>'] = 1
+        for item in self.lexicon[2:]:
+            word = item[0].split('/')[0]
+            for c in word:
+                if c not in self.c2i:
+                    self.c2i[c] = len(self.c2i)
+
+        self.i2c = {v: k for k, v in self.c2i.items()}
+        print('{} chars contained'.format(len(self.c2i)))
+        #print(sorted([x for x in self.c2i.keys()]))
+
+    def __len__(self):
+        return len(self.c2i)
 
 class Corpus(object):
     def __init__(self, vocab, debug=False):
@@ -41,9 +61,15 @@ class Corpus(object):
                 lines = lines[:1024*100]
             for line in tqdm(lines):
                 words = line.strip().split(' ')
-                encoded += [self.vocab.w2i[x] if x in self.vocab.w2i else self.vocab.w2i['<unk>'] for x in words] \
-                          + [self.vocab.w2i['<eos>']]
+                if isinstance(self.vocab, CharVocab):
+                    words = ''.join([word.split('/')[0] for word in words])
+                    encoded += [self.vocab.c2i[x] if x in self.vocab.c2i else self.vocab.c2i['<unk>'] for x in words] \
+                               + [self.vocab.c2i['<eos>']]
+                else:
+                    encoded += [self.vocab.w2i[x] if x in self.vocab.w2i else self.vocab.w2i['<unk>'] for x in words] \
+                              + [self.vocab.w2i['<eos>']]
         return encoded
+
 '''
 Pack the compressed embeddings into a pickle again  
 '''
@@ -66,5 +92,7 @@ if __name__ == "__main__":
     # test the model
     # build_compressed_embedding_pkl('embedding.txt.comp')
     vocab = Vocab(50000)
+    #vocab = CharVocab(50000)
     corpus = Corpus(vocab, debug=True)
     print([vocab.i2w[x] for x in corpus.encoded_train][:100])
+    #print([vocab.i2c[x] for x in corpus.encoded_train][:1000])

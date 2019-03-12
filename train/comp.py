@@ -11,6 +11,7 @@ from config import experiment_path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--experiment", "-e", type=int, default=None, help="Which experiment dump to use")
+parser.add_argument("--comp", "-c", type=int, default=1, help="Compress bit")
 args = parser.parse_args()
 
 # https://arxiv.org/pdf/1510.00149v5.pdf
@@ -48,9 +49,11 @@ def kmeans_compress(weight, bit=8):
 
 def compressed_trained_weights(experiment, debug=True):
     # make the comp dir
+    comp_dir = 'comp_{}'.format(args.comp)
+
     weights_path = os.path.join(experiment_path, str(experiment), "weights")
-    if not os.path.exists(os.path.join(weights_path, 'comp')):
-        os.makedirs(os.path.join(weights_path, 'comp'))
+    if not os.path.exists(os.path.join(weights_path, comp_dir)):
+        os.makedirs(os.path.join(weights_path, comp_dir))
 
     weights = pickle.load(open(os.path.join(weights_path, 'lstm_weights.pkl'), 'rb'))
 
@@ -60,21 +63,21 @@ def compressed_trained_weights(experiment, debug=True):
     for key, value in weights.items():
         print('compressing {} {} '.format(key, value.shape))
         start = time.time()
-        code, codebook = kmeans_compress(value, bit)
+        code, codebook = kmeans_compress(value, args.comp)
 
         end = time.time()
         comp_dump[key] = (code, codebook)
         comp_weights[key] = np.take(codebook, code)
 
         if debug:
-            np.savetxt(os.path.join(weights_path, 'comp', '{}_code.txt'.format(key)), code.astype(int), fmt='%i')
-            np.savetxt(os.path.join(weights_path, 'comp', '{}_codebook.txt'.format(key)), codebook)
+            np.savetxt(os.path.join(weights_path, comp_dir, '{}_code.txt'.format(key)), code.astype(int), fmt='%i')
+            np.savetxt(os.path.join(weights_path, comp_dir, '{}_codebook.txt'.format(key)), codebook)
 
         print('{} {} compressed in {} s'.format(key, value.shape, end-start))
 
     # dump the compressed (code, codebook), also keep a decoded version
-    pickle.dump(comp_weights, open(os.path.join(weights_path, 'lstm_weights_comp.pkl'), 'wb'))
-    pickle.dump(comp_dump, open(os.path.join(weights_path, 'comp', 'lstm_weights_comp_dump.pkl'), 'wb'))
+    pickle.dump(comp_weights, open(os.path.join(weights_path, 'lstm_weights_comp_{}.pkl'.format(args.comp)), 'wb'))
+    pickle.dump(comp_dump, open(os.path.join(weights_path, comp_dir, 'lstm_weights_comp_dump.pkl'), 'wb'))
 
 if __name__ == '__main__':
     if args.experiment is not None:

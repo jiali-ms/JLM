@@ -51,4 +51,4 @@ def auto_generate_sentence(experiment=1):
             starting_text = input('> ')
 
 if __name__ == "__main__":
-    auto_generate_sentence(experiment=4)
+    auto_generate_sentence(experiment=2)
