@@ -12,7 +12,7 @@ The training part is done with TensorFlow. Instead of depending on a big dynamic
 We implemented the standard LSTM , [tie-embedding](https://arxiv.org/abs/1608.05859), [D-softmax](https://arxiv.org/abs/1512.04906), and [D-softmax*](https://arxiv.org/abs/1609.04309) in both training and numpy inference stages as a comparison. In practice, please consider just use D-softmax* for your best interest.
 
 ## Decoder
-A standard Viterbi decoder with beam search is implemented. It batches prediction to save decoding time.
+A standard Viterbi decoder with beam search is implemented. It batches prediction to save decoding time. We also implemented [Enabling Real-time Neural IME with Incremental Vocabulary Selection](https://www.aclweb.org/anthology/N19-2001) at NAACL 2019. It further more reduced the softmax cost during decoding by ~95%, reaching real-time in commodity CPU. 
 
 # How to use
 ## Corpus preparation
